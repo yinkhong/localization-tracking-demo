@@ -1,4 +1,4 @@
-import {blockedTask, incompletePredecessors, isDependencyStatus, parentTaskIds, StatusPicker, statusGroup, workflowOrder} from './status';
+import {blockedTask, dependencyIds, incompletePredecessors, isDependencyStatus, parentTaskIds, StatusPicker, statusGroup, workflowOrder} from './status';
 import React, {useState} from 'react';
 import {zoneCode} from './time-zone';
 import {estimate, formatMinutes, types} from './data';
@@ -36,14 +36,14 @@ export function bootstrapWorkflow(state) {
 const trackedFields = {
  requests:['title','account','owner','status','risk','due','forecast','files','types','initialMinutes'],
  workflowFiles:['name'],
- tasks:['type','person','pages','status','due','scheduledStart','scheduledEnd','dependsOn','parentTask','spent'],
+ tasks:['file','fileId','type','person','pages','status','due','scheduledStart','scheduledEnd','dependsOn','parentTask','spent'],
  defects:['title','severity','status','request','task','relatedTasks','description','filePath','steps','rootCause','corrective','preventive','attachments','assignedTo','reviewedBy','operator','team','account','acknowledgments'],
 };
 const recordNames = {requests:'Request',workflowFiles:'File',tasks:'Task',defects:'Defect'};
 const fieldNames = {
  title:'Title',account:'Account',owner:'Project owner',person:'Assignee',type:'Task type',pages:'Pages',
  status:'Status',risk:'Delivery risk',due:'Due',forecast:'Forecast',files:'Planned files',types:'Task types',
- initialMinutes:'Estimated effort (min)',name:'File name',scheduledStart:'Scheduled start',
+ initialMinutes:'Estimated effort (min)',name:'File name',file:'Workflow file name',fileId:'Workflow file ID',scheduledStart:'Scheduled start',
  scheduledEnd:'Scheduled end',dependsOn:'Predecessor',parentTask:'Parent task',spent:'Recorded work (sec)',
  severity:'Severity',request:'Related request',task:'Primary related task',relatedTasks:'Additional related tasks',description:'Incident summary',filePath:'File path',steps:'Steps & operators',rootCause:'Root cause',corrective:'Corrective actions',preventive:'Preventive actions',attachments:'Attachments',
  timer:'Timer started at',assignedTo:'Assigned to',reviewedBy:'Reviewed by',operator:'Linked operator',team:'Team',acknowledgments:'Signed acknowledgment',
@@ -164,7 +164,7 @@ export function ZonedInput({zone,toInstant,initial='',onChange,onBlur,onKeyDown,
    onKeyDown?.(event);
   }}
   onBlur={event=>{const replacement=onBlur?.(event.target.value);if(typeof replacement==='string')setValue(replacement);}}/>
-  <span className="zone-code" aria-hidden="true">{zoneCode(zone,value&&toInstant(value,zone)||undefined)}</span></span>;
+  <span className="zone-code">{zoneCode(zone,value&&toInstant(value,zone)||undefined)}</span></span>;
 }
 
 export function InlineDue({task,zone,localValue,toInstant,save,showError}) {
@@ -180,9 +180,8 @@ export function InlineDue({task,zone,localValue,toInstant,save,showError}) {
 }
 
 export function TaskStatus({task,statuses,locked,blocked,save}) {
- const currentGroup=statusGroup(statuses,task.status);
  const choices=statuses.filter(status=>status.id===task.status||!isDependencyStatus(status.id)&&
-  (currentGroup==='Complete'?status.group==='Complete':!blocked||status.group!=='To-do'));
+  (!blocked||status.group!=='To-do'));
  return <StatusPicker label={'Status · '+task.id} statuses={choices} value={task.status}
   disabled={locked} onChange={status=>save({status})}/>;
 }
@@ -195,6 +194,11 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
   const parents=parentTaskIds(items);
   const leaves=items.filter(task=>!parents.has(task.id));
   const rows=workflowOrder(items);
+  const byId=new Map(tasks.map(task=>[task.id,task]));
+  const linkedTask=id=>{
+   const linked=byId.get(id);
+   return linked&&<button className="link" key={id} onClick={()=>openTask(id)}>{linked.type} · {id}</button>;
+  };
   return <details className="file-workflow" key={file.id} open>
    <summary><strong>{file.name}</strong><span>{leaves.filter(task=>statusGroup(statuses,task.status)==='Complete').length} / {leaves.length} complete</span></summary>
    {items.length?<div className="table-wrap"><table className="workflow-table">
@@ -203,20 +207,34 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      const blockers=incompletePredecessors(task,tasks,statuses);
      const blocked=blockers.length>0;
      const parent=parents.has(task.id);
+     const predecessors=dependencyIds(task,tasks);
+     const parallel=!parent&&leaves.some(peer=>peer.id!==task.id&&peer.parentTask===task.parentTask&&
+      JSON.stringify(dependencyIds(peer,tasks).sort())===JSON.stringify([...predecessors].sort()));
+     let depth=0;
+     const seen=new Set([task.id]);
+     for(let ancestor=byId.get(task.parentTask);ancestor&&!seen.has(ancestor.id);ancestor=byId.get(ancestor.parentTask)){
+      depth++;seen.add(ancestor.id);
+     }
      const save=fields=>changeTask(task.id,fields);
      const effort=estimate(account,task.type,task.pages);
      return <tr key={task.id} className={task.parentTask?'workflow-subtask':''}>
-      <td><button className="link record" onClick={()=>openTask(task.id)}>{task.parentTask?'↳ ':''}{task.type} <span aria-hidden="true">↗</span></button>
-       <small>{task.parentTask?'Subtask · ':parent?'Parent task · ':''}{task.id}</small>
-       {blocked?<small className="workflow-blocked">Waiting for {blockers.map(item=>item.id).join(', ')}</small>:task.dependsOn&&<small>After {task.dependsOn}</small>}</td>
+      <td><div className="workflow-operation" style={{marginInlineStart:Math.min(depth,5)*18}}>
+       <button className="link record" onClick={()=>openTask(task.id)}>{task.type} <span aria-hidden="true">↗</span></button>
+       <small>{parent?'Parent task · ':''}{task.id}</small>
+       {depth>0&&<small className="workflow-relation child-relation"><span>Subtask of</span>{linkedTask(task.parentTask)}</small>}
+       {predecessors.length>0&&<small className={'workflow-relation dependency-relation '+(blocked?'workflow-blocked':'')}>
+        <span>{blocked?'Waiting for':'After'}</span>{predecessors.map(linkedTask)}</small>}
+       {parallel&&<small className="workflow-relation parallel-relation">Parallel · same prerequisites</small>}
+       {!predecessors.length&&!parallel&&<small className="workflow-relation parallel-relation">No prerequisite</small>}
+      </div></td>
       <td>{canManage?<TaskSelect label={'Task type · '+task.id} value={task.type} options={types} disabled={locked(task.id)} save={type=>save({type})}/>:task.type}</td>
       <td>{parent?<span className="parent-note">Subtasks only</span>:canManage?<TaskSelect label={'Operator · '+task.id} value={task.person||''} options={[[ '', 'Unassigned' ],...people]}
        disabled={locked(task.id)} save={person=>save({person})}/>:task.person||'Unassigned'}</td>
-      <td>{!parent&&editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>
+      <td>{editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>
       <td>{canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
       <td>{parent?'—':formatMinutes(effort.minutes)}{!parent&&effort.source==='Historical'&&<small>Historical</small>}</td>
       <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save}/>:statusBadge(task.status)}</td>
-      <td><div className="workflow-actions">{taskAction(task)}{canManage&&!task.parentTask&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}</div></td>
+      <td><div className="workflow-actions">{taskAction(task)}{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}</div></td>
      </tr>;
     })}</tbody>
    </table></div>:<p className="empty">No operations in this workflow yet.</p>}

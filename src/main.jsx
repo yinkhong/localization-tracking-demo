@@ -7,6 +7,7 @@ import {blockedTask, bootstrapStatuses, dependencyError, dependencyIds, isDepend
 import {DefectForm, RcaBody} from './rca';
 import {Acknowledgment, bootstrapDefects, defectAttribution, defectChanges, DefectPerformance, defectSeverities, defectStatuses, canEditDefect, RcaTimeline, ReviewSelect, reviewRoles} from './defect-review';
 import {formatZoned, zoneCode} from './time-zone';
+import {TaskRelationships, updateRelationships} from './task-relations';
 import './style.css';
 
 const sections=[['Overview','◫'],['Requests','▤'],['Planning','▦'],['My work','✓'],['Defects','◇']];
@@ -59,6 +60,16 @@ function App(){
  const taskBlocked=(task,all=tasks)=>blockedTask(task,all,statuses);
  const stats=[['Open requests',requests.filter(r=>phase(r.status)!=='Complete').length,'Across all sample accounts','▤'],['At risk',requests.filter(r=>r.risk==='At risk').length,'Needs PM attention','!'],['Ready to assign',tasks.filter(t=>!parents.has(t.id)&&phase(t.status)==='To-do'&&!taskBlocked(t)&&!t.person).length,'Unassigned operations','＋'],['Defects in review',defects.filter(d=>d.status!=='Closed').length,'Awaiting a decision','◇']];
  const editable=t=>canManage||t?.person===profile;
+ function saveRelationships(changes){
+  const result=updateRelationships(tasks,task.id,changes,statuses,timers,Date.now());
+  if(result.error){setWorkflowError(result.error);return;}
+  setWorkflowError('');
+  commit('Updated workflow relationships',(s,timestamp)=>{
+   const updated=updateRelationships(s.tasks,task.id,changes,s.statuses,Object.values(s.activeTimers),timestamp);
+   return updated.error?s:{...s,tasks:updated.tasks};
+  });
+  setNotice('Relationships saved');
+ }
  const taskIsParent=task&&parents.has(task.id);
  const canAddSubtask=task=>!isRunning(task.id)&&!(phase(task.status)==='Complete'&&tasks.some(
   item=>phase(item.status)!=='To-do'&&dependencyIds(item,tasks).includes(task.id)));
@@ -116,6 +127,12 @@ function App(){
   if(!current)return;
   const error=fields.status&&phase(fields.status)!=='To-do'&&dependencyError(current,tasks,statuses);
   if(error){setWorkflowError(error);return;}
+  if(fields.status&&phase(current.status)==='Complete'&&phase(fields.status)!=='Complete'){
+   const reopened=resolveTasks(tasks.map(item=>item.id===id?{...item,status:fields.status}:item),statuses,Date.now());
+   if(reopened.some(item=>phase(item.status)!=='To-do'&&taskBlocked(item,reopened)&&!taskBlocked(taskOf(item.id)))){
+    setWorkflowError('This task cannot reopen while downstream work has already started.');return;
+   }
+  }
   setWorkflowError('');
   const action=Object.hasOwn(fields,'person')?'Changed assignee':Object.hasOwn(fields,'status')?'Changed status':'Updated task';
   commit(action,(s,timestamp)=>{
@@ -124,9 +141,8 @@ function App(){
    if(!canManage&&Object.keys(fields).some(key=>!['pages','status'].includes(key)))return s;
    if(Object.values(s.activeTimers).some(timer=>timer.id===id)&&
       ['person','type','status'].some(key=>Object.hasOwn(fields,key)))return s;
-   if(parentTaskIds(s.tasks).has(id)&&['person','status','pages','scheduledStart','scheduledEnd'].some(key=>Object.hasOwn(fields,key)))return s;
-   if(fields.status&&(!phase(fields.status)||(taskBlocked(task,s.tasks)&&phase(fields.status)!=='To-do')||
-      (phase(task.status)==='Complete'&&phase(fields.status)!=='Complete')))return s;
+   if(parentTaskIds(s.tasks).has(id)&&['person','status'].some(key=>Object.hasOwn(fields,key)))return s;
+   if(fields.status&&(!phase(fields.status)||(taskBlocked(task,s.tasks)&&phase(fields.status)!=='To-do')))return s;
    if(Object.entries(fields).every(([key,value])=>(task[key]??null)===(value??null)))return s;
    const updated=s.tasks.map(item=>item.id===id?patchRecord(item,fields,timestamp,'person'):item);
    const attributed=fields.person?s.defects.map(report=>report.task===id&&!report.operator&&report.status!=='Closed'?
@@ -213,7 +229,15 @@ function App(){
    save={saveDefect} {...{reviewers,canReview}} cancel={()=>setDialog(null)}/>
  </>:<>
  {['Request','Task','Defect'].includes(view)&&<button className="link back" onClick={()=>navigate(view==='Request'?'Requests':view==='Task'?(task?.parentTask?'Task':role==='Operator'?'My work':'Request'):'Defects',task?.parentTask||task?.request)}>‹ Back</button>}
- <div className="heading"><div><h1>{heading?.[0]}</h1><p>{heading?.[1]}</p></div>{(['Overview','Requests'].includes(view)&&role!=='Operator')&&<button className="primary" onClick={()=>setDialog({kind:'request'})}>＋ New request</button>}{view==='Defects'&&<button className="primary" onClick={()=>setDialog({kind:'defect'})}>＋ New report</button>}</div>
+ <div className="heading"><div><h1>{heading?.[0]}</h1>
+ {view==='Request'&&req&&<div className="request-heading-status">
+  <div><small>Request status</small>{canManage?<StatusPicker label="Request status"
+   statuses={statuses.filter(status=>!isDependencyStatus(status.id)||status.id===req.status)} value={req.status}
+   onEdit={role==='Manager'?()=>navigate('Admin'):undefined}
+   onChange={status=>commit('Changed request status',(s,timestamp)=>({...s,requests:s.requests.map(r=>r.id===req.id?patchRecord(r,{status},timestamp):r)}))}/>:statusBadge(req.status)}</div>
+  <div><small>Estimated project completion</small><span className="completion-status">{badge(req.risk)} {req.forecast&&<strong>{date(req.forecast)}</strong>}</span></div>
+ </div>}
+ <p>{heading?.[1]}</p></div>{(['Overview','Requests'].includes(view)&&role!=='Operator')&&<button className="primary" onClick={()=>setDialog({kind:'request'})}>＋ New request</button>}{view==='Defects'&&<button className="primary" onClick={()=>setDialog({kind:'defect'})}>＋ New report</button>}</div>
  {workflowError&&<div className="workflow-error" role="alert"><span>{workflowError}</span><button aria-label="Dismiss error" onClick={()=>setWorkflowError('')}>Dismiss</button></div>}
  {activeTask&&<div className="timer"><div>{badge('In progress')} <button className="link" onClick={()=>navigate('Task',activeTask.id)}>{activeTask.file} · {activeTask.type}</button></div><div><strong>{clock(elapsed)}</strong><button onClick={()=>stop()}>Pause</button><button className="primary" onClick={()=>stop(true)}>Complete</button></div></div>}
  {view==='Overview'&&<>
@@ -223,11 +247,10 @@ function App(){
  <section className="panel"><div className="panel-header"><h2>Recent requests</h2><button onClick={()=>navigate('Requests')}>View all requests</button></div>{requestTable(requests.slice(0,4))}</section></>}
  {view==='Overview'&&role==='Manager'&&<DefectPerformance records={defects} profiles={profiles}/>}
  {view==='Requests'&&<section className="panel"><div className="panel-header filters">{searchInput('Search requests')}{selectFilter(['All','At risk','On track','Unscheduled'])}</div>{requestTable(requests.filter(r=>search(r.title,r.id,r.account)&&(filter==='All'||r.risk===filter)))}</section>}
- {view==='Request'&&req&&<><section className="panel summary"><div>{canManage?<StatusPicker label="Request status" statuses={statuses.filter(status=>!isDependencyStatus(status.id)||status.id===req.status)} value={req.status}
-  onChange={status=>commit('Changed request status',(s,timestamp)=>({...s,requests:s.requests.map(r=>r.id===req.id?patchRecord(r,{status},timestamp):r)}))}/>:statusBadge(req.status)} {badge(req.risk)}</div><div><small>Project owner</small>{canManage?<select aria-label="Project owner" value={req.owner||''} onChange={e=>{
+ {view==='Request'&&req&&<><section className="panel summary"><div><small>Project owner</small>{canManage?<select aria-label="Project owner" value={req.owner||''} onChange={e=>{
  const owner=e.target.value;
  commit('Changed project owner',(s,timestamp)=>({...s,requests:s.requests.map(r=>r.id===req.id?patchRecord(r,{owner},timestamp,'owner'):r)}));
- }}><option value="">Unassigned</option>{people.map(person=><option key={person}>{person}</option>)}</select>:<strong>{req.owner||'Unassigned'}</strong>}</div><div><small>Due</small><strong>{date(req.due)}</strong></div><div><small>Forecast finish</small><strong>{date(req.forecast)}</strong></div><div><small>Estimated active effort</small><strong>{formatMinutes(req.initialMinutes)}</strong></div></section>
+ }}><option value="">Unassigned</option>{people.map(person=><option key={person}>{person}</option>)}</select>:<strong>{req.owner||'Unassigned'}</strong>}</div><div><small>Due</small><strong>{date(req.due)}</strong></div><div><small>Estimated active effort</small><strong>{formatMinutes(req.initialMinutes)}</strong></div></section>
  <div className="panel-header request-toolbar">
  {tabs(['Files & workflows','Escalations & defects',...(canSeeActivity?['Activity log']:[])],projectTab==='Tasks'?'Files & workflows':projectTab,setProjectTab)}
  {projectTab==='Escalations & defects'&&<button onClick={()=>setDialog({kind:'defect',request:req.id})}>New report</button>}
@@ -263,18 +286,20 @@ function App(){
  {canManage&&<div><small>Task type</small><TaskSelect label="Task type" value={task.type} options={types} disabled={isRunning(task.id)} save={type=>changeTask(task.id,{type})}/></div>}
  {!taskIsParent&&editable(task)&&<div><small>Status</small><TaskStatus task={task} statuses={statuses} locked={isRunning(task.id)} blocked={taskBlocked(task)} save={fields=>changeTask(task.id,fields)}/></div>}
  {taskIsParent&&<div><small>Progress</small><strong>{tasks.filter(t=>t.parentTask===task.id&&phase(t.status)==='Complete').length} of {tasks.filter(t=>t.parentTask===task.id).length} subtasks complete</strong></div>}<div><small>Recorded effort</small><strong>{clock((task.spent??0)+(isRunning(task.id)?Math.max(0,Math.floor((now-timers.find(timer=>timer.id===task.id).started)/1000)):0))}</strong></div></div>
- {!taskIsParent&&<TaskFields key={task.id+':'+task.pages} task={task} account={requestOf(task.request)?.account} editable={editable(task)} save={pages=>{changeTask(task.id,{pages});setNotice('Page count saved');}}/>}
- {canManage&&!taskIsParent&&<ScheduleFields key={task.id} task={task} zone={zone} save={fields=>{
+ <TaskFields key={task.id+':'+task.pages} task={task} account={requestOf(task.request)?.account} editable={editable(task)} save={pages=>{changeTask(task.id,{pages});setNotice('Page count saved');}}/>
+ {canManage&&<ScheduleFields key={task.id} task={task} zone={zone} save={fields=>{
   changeTask(task.id,fields);setNotice('Schedule saved');
  }}/>}
  {task.parentTask&&<div className="note">Parent task <button className="link" onClick={()=>navigate('Task',task.parentTask)}>{task.parentTask}</button></div>}
  {task.dependsOn&&<div className="note">Depends on <button className="link" onClick={()=>navigate('Task',task.dependsOn)}>{task.dependsOn}</button></div>}</section>
+ {canManage&&<TaskRelationships key={[task.id,task.fileId,task.parentTask,task.dependsOn,...tasks.filter(item=>item.parentTask===task.id).map(item=>item.id)].join(':')} task={task} tasks={tasks.filter(item=>item.request===task.request)}
+  files={workflowFiles.filter(file=>file.request===task.request)} save={saveRelationships}/>}
  <Metadata record={task} date={historyDate}/>
  {canSeeActivity&&<details className="task-activity"><summary>Activity log</summary>
   <ActivityLog key={task.id} entries={activity.filter(entry=>entry.taskIds.includes(task.id))} date={historyDate}/>
  </details>}
  <SessionList task={task} active={timers} date={historyDate} clock={clock} now={now}/>
- {!task.parentTask&&<section className="panel"><div className="panel-header"><h2>Subtasks</h2>{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(workflowFiles.find(file=>file.id===task.fileId),task)}>Add subtask</button>}</div>{taskTable(tasks.filter(t=>t.parentTask===task.id))}</section>}
+ {(canManage||taskIsParent)&&<section className="panel"><div className="panel-header"><h2>Subtasks</h2>{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(workflowFiles.find(file=>file.id===task.fileId),task)}>Add subtask</button>}</div>{taskTable(tasks.filter(t=>t.parentTask===task.id))}</section>}
  <section className="panel"><div className="panel-header"><h2>Related defects</h2><button onClick={()=>setDialog({kind:'defect',request:task.request,task:task.id})}>New report</button></div>{defectTable(defects.filter(d=>d.task===task.id||d.relatedTasks?.includes(task.id)))}</section></>}
  {view==='Defects'&&<section className="panel"><div className="panel-header filters">{searchInput('Search defect reports')}{selectFilter(['All','Open','Under review','Closed'])}</div>{defectTable(defects.filter(d=>search(d.id,d.title,d.request)&&(filter==='All'||d.status===filter)))}</section>}
  {view==='Defect'&&defect&&<>

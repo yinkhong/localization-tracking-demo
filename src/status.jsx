@@ -1,4 +1,5 @@
-import React, {useState} from 'react';
+import React, {useEffect,useId,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
 
 export const groups = ['To-do','In progress','Complete'];
 export const initialStatuses = [
@@ -20,12 +21,72 @@ export function statusGroup(statuses,id) {
 const statusColors={'To-do':'amber','In progress':'blue','Complete':'green'};
 export const statusColor=group=>statusColors[group]??'gray';
 
-export function StatusPicker({statuses,value,onChange,label,disabled=false}) {
- return <select className={'status-picker '+statusColor(statusGroup(statuses,value))} aria-label={label} value={value} onChange={e=>onChange(e.target.value)} disabled={disabled}>
-  {groups.map(group=>[group,statuses.filter(status=>status.group===group)]).filter(([,items])=>items.length).map(([group,items])=><optgroup label={group} key={group}>
-   {items.map(status=><option className={statusColor(group)} key={status.id} value={status.id}>{status.label}</option>)}
-  </optgroup>)}
- </select>;
+function labelColor(status){
+ if(!status)return 'gray';
+ if(/reject/i.test(status.label))return 'red';
+ if(/cancel/i.test(status.label))return 'tan';
+ if(status.id==='Paused'||/hold/i.test(status.label))return 'purple';
+ if(status.group==='To-do'&&status.id!=='Assigned'&&!/assign|triage/i.test(status.label))return 'gray';
+ return statusColor(status.group);
+}
+
+export function StatusPicker({statuses,value,onChange,label,disabled=false,onEdit}) {
+ const [position,setPosition]=useState(null);
+ const trigger=useRef(null), menu=useRef(null);
+ const id=useId();
+ const current=statuses.find(status=>status.id===value);
+ function close(focus=false){setPosition(null);if(focus)trigger.current?.focus();}
+ useEffect(()=>{
+  if(!position)return;
+  (menu.current?.querySelector('[aria-checked="true"]')??menu.current?.querySelector('button'))?.focus();
+  function outside(event){if(!trigger.current?.contains(event.target)&&!menu.current?.contains(event.target))close();}
+  function reposition(event){if(!menu.current?.contains(event.target))close();}
+  document.addEventListener('pointerdown',outside);
+  window.addEventListener('scroll',reposition,true);
+  window.addEventListener('resize',reposition);
+  return ()=>{
+   document.removeEventListener('pointerdown',outside);
+   window.removeEventListener('scroll',reposition,true);
+   window.removeEventListener('resize',reposition);
+  };
+ },[position]);
+ function toggle(){
+  if(position){close();return;}
+  const rect=trigger.current.getBoundingClientRect();
+  const below=window.innerHeight-rect.bottom;
+  const above=rect.top;
+  const upward=below<280&&above>below;
+  setPosition({left:Math.max(8,Math.min(rect.left,window.innerWidth-228)),
+   maxHeight:Math.max(80,(upward?above:below)-12),
+   ...(upward?{bottom:window.innerHeight-rect.top+5}:{top:rect.bottom+5})});
+ }
+ const pill=status=><span className={'badge '+labelColor(status)}><i/>{status?.label??value}</span>;
+ return <>
+  <button ref={trigger} type="button" className="status-trigger" aria-label={label+': '+(current?.label??value)}
+   aria-haspopup="menu" aria-controls={position?id:undefined} aria-expanded={Boolean(position)} disabled={disabled}
+   onClick={toggle} onKeyDown={event=>{if(event.key==='ArrowDown'){event.preventDefault();toggle();}}}>
+   {pill(current)}<span className="select-chevron" aria-hidden="true"/>
+  </button>
+  {position&&createPortal(<div id={id} ref={menu} role="menu" aria-label={label} className="status-menu"
+   style={position} onBlur={event=>{if(event.relatedTarget&&!event.currentTarget.contains(event.relatedTarget)&&event.relatedTarget!==trigger.current)close();}}
+   onKeyDown={event=>{
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close(true);return;}
+    if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
+    event.preventDefault();
+    const options=[...menu.current.querySelectorAll('button')];
+    const index=options.indexOf(document.activeElement);
+    const next=event.key==='Home'?0:event.key==='End'?options.length-1:
+     (index+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;
+    options[next]?.focus();
+   }}>
+   {groups.map(group=>[group,statuses.filter(status=>status.group===group)]).filter(([,items])=>items.length).map(([group,items])=>
+    <div className="status-menu-group" role="group" aria-label={group} key={group}><div className="status-group-title">{group}</div>
+     {items.map(status=><button type="button" role="menuitemradio" aria-checked={value===status.id} key={status.id}
+      onClick={()=>{close(true);onChange(status.id);}}>{pill(status)}</button>)}
+    </div>)}
+   {onEdit&&<button type="button" role="menuitem" onClick={()=>{close();onEdit();}}>Edit status labels</button>}
+  </div>,document.body)}
+ </>;
 }
 
 export function StatusAdmin({statuses,save}) {
