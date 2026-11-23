@@ -72,6 +72,10 @@ export function withActivity(before, next, actor, timestamp, action) {
      const name=(id,list)=>list?.find(type=>type.id===id)?.label??id;
      return [{key,from:name(from,before.taskTypes),to:name(to,next.taskTypes)}];
     }
+    if(key==='account'){
+     const name=(id,list)=>list?.find(account=>account.id===id)?.label??id;
+     return [{key,from:name(from,before.accounts),to:name(to,next.accounts)}];
+    }
     if(key==='status'&&collection!=='defects'){
      const name=(value,list)=>list?.find(status=>status.id===value)?.label??value;
      return [{key,from:name(from,collection==='requests'?before.requestStatuses:before.statuses),to:name(to,collection==='requests'?next.requestStatuses:next.statuses)}];
@@ -200,10 +204,14 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
  addTask,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,editTaskStatuses,editTaskTypes,orders,moveTask}) {
  const [drag,setDrag]=useState(null);
  const [target,setTarget]=useState(null);
- function drop(file,event,id){
-  event.preventDefault();
+ function placement(event){
   const rect=event.currentTarget.getBoundingClientRect();
-  if(drag?.file===file.id)moveTask(file.id,drag.id,id,event.clientY>=rect.top+rect.height/2);
+  const fraction=(event.clientY-rect.top)/rect.height;
+  return fraction<.27?'before':fraction>.73?'after':'inside';
+ }
+ function drop(file,event,id,mode=placement(event)){
+  event.preventDefault();
+  if(drag?.file===file.id)moveTask(file.id,drag.id,id,mode);
   setDrag(null);setTarget(null);
  }
  if(!files.length)return <p className="empty">Add a file to create its workflow.</p>;
@@ -237,18 +245,19 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      const effort=estimate(account,task.type,task.pages);
      const siblings=rows.filter(row=>(row.parentTask||null)===(task.parentTask||null));
      const index=siblings.indexOf(task);
-     return <tr key={task.id} className={(task.parentTask?'workflow-subtask ':'')+(target===task.id?'drag-target':'')}
-      onDragOver={event=>{if(drag?.file===file.id){event.preventDefault();setTarget(task.id);}}}
+     return <tr key={task.id} className={(task.parentTask?'workflow-subtask ':'')+(target?.id===task.id?'drag-'+target.mode:'')}
+      onDragOver={event=>{if(drag?.file===file.id){event.preventDefault();setTarget({id:task.id,mode:placement(event)});}}}
       onDrop={event=>drop(file,event,task.id)}>
       <td><div className="workflow-operation" style={{marginInlineStart:Math.min(depth,5)*18}}>
-       {canManage&&siblings.length>1&&<button type="button" className="drag-handle" draggable title="Drag to reorder, or focus and use the Up and Down arrow keys."
+       {canManage&&(items.length>1||task.parentTask)&&<button type="button" className="drag-handle" draggable title="Drop in the center to nest, or at the edge to reorder. Arrow keys reorder. Left promotes to top level."
         aria-label={'Reorder '+task.id} onDragStart={event=>{
          event.dataTransfer.setData('text/plain',task.id);event.dataTransfer.effectAllowed='move';setDrag({file:file.id,id:task.id});
         }} onDragEnd={()=>{setDrag(null);setTarget(null);}} onKeyDown={event=>{
+         if(event.key==='ArrowLeft'&&task.parentTask){event.preventDefault();moveTask(file.id,task.id,null,'root');return;}
          if(!['ArrowUp','ArrowDown'].includes(event.key))return;
          const direction=event.key==='ArrowDown'?1:-1;
          const other=siblings[index+direction];
-         if(other){event.preventDefault();moveTask(file.id,task.id,other.id,direction>0);}
+         if(other){event.preventDefault();moveTask(file.id,task.id,other.id,direction>0?'after':'before');}
         }}>⠿</button>}
        <button className="link record" onClick={()=>openTask(task.id)}>{typeLabel(task.type)} <span aria-hidden="true">↗</span></button>
        <small>{parent?'Parent task · ':''}{task.id}</small>
@@ -269,6 +278,8 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      </tr>;
     })}</tbody>
    </table></div>:<p className="empty">No operations in this workflow yet.</p>}
+   {canManage&&drag?.file===file.id&&<div className="root-drop" onDragOver={event=>event.preventDefault()}
+    onDrop={event=>drop(file,event,null,'root')}>Drop here to make a top-level task</div>}
    {canManage&&<div className="workflow-footer"><button onClick={()=>addTask(file)}>＋ Add task</button></div>}
   </details>;
  })}</div>;

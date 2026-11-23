@@ -3,14 +3,14 @@ import {estimate, formatMinutes, zones} from './data';
 import {parentTaskIds,statusGroup} from './status';
 import {groups} from './timeline';
 
-function operatorTeams(person,type){
- const memberships=groups.filter(group=>group.members.includes(person));
- const preferred=type==='QC'?'QC':['Formatting','Preflight'].includes(type)?'DTP':null;
+function operatorTeams(person,type,roster){
+ const memberships=roster.filter(group=>group.members.includes(person));
+ const preferred={QC:'QC',Formatting:'DTP',Preflight:'DTP',Audio:'Audio',Braille:'Braille'}[type];
  const matching=memberships.filter(group=>group.team===preferred);
  return [...new Set((matching.length?matching:memberships).map(group=>group.team))];
 }
 
-export function reportRows(requests,tasks,filters,view,taskStatuses,requestStatuses,zone){
+export function reportRows(requests,tasks,filters,view,taskStatuses,requestStatuses,zone,roster=groups){
  const {account,operator,team,type,from,to,status,dateField='due'}=filters;
  const day=value=>value==null?'':new Intl.DateTimeFormat('en-CA',{timeZone:zones[zone],year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));
  const matchesDate=row=>{
@@ -21,7 +21,7 @@ export function reportRows(requests,tasks,filters,view,taskStatuses,requestStatu
  const parents=parentTaskIds(tasks);
  const requestById=new Map(requests.map(row=>[row.id,row]));
  const taskRows=tasks.map(task=>({...task,account:requestById.get(task.request)?.account??'',
-  operator:task.person||'',teams:operatorTeams(task.person,task.type),
+  operator:task.person||'',teams:operatorTeams(task.person,task.type,roster),
   effort:parents.has(task.id)?null:estimate(requestById.get(task.request)?.account,task.type,task.pages).minutes,
   minutes:(task.spent??0)/60,phase:statusGroup(taskStatuses,task.status)}));
  const matchesTask=row=>(!operator||row.operator===operator)&&(!team||row.teams.includes(team))&&(!type||row.type===type);
@@ -42,13 +42,13 @@ export function reportRows(requests,tasks,filters,view,taskStatuses,requestStatu
  });
 }
 
-export function Reporting({requests,tasks,taskStatuses,requestStatuses,taskTypes,people,typeLabel,date,zone,navigate}){
+export function Reporting({requests,tasks,taskStatuses,requestStatuses,taskTypes,people,typeLabel,date,zone,navigate,teamGroups=groups,accountLabel=id=>id}){
  const [view,setView]=useState('Tasks');
  const [filters,setFilters]=useState({});
  const [sort,setSort]=useState({key:'due',ascending:true});
  const statuses=view==='Tasks'?taskStatuses:requestStatuses;
  const label=id=>statuses.find(status=>status.id===id)?.label??id;
- const rows=reportRows(requests,tasks,filters,view,taskStatuses,requestStatuses,zone);
+ const rows=reportRows(requests,tasks,filters,view,taskStatuses,requestStatuses,zone,teamGroups);
  const columns=view==='Tasks'?
   [['title','Task'],['account','Account'],['operator','Operator'],['teams','Team'],['type','Task type'],['status','Status'],['due','Due'],['modifiedAt','Last updated'],['effort','Est. effort'],['minutes','Recorded time']]:
   [['title','Request'],['account','Account'],['owner','Owner'],['operators','Operators'],['teams','Teams'],['typeIds','Task types'],['status','Status'],['due','Due'],['modifiedAt','Last updated'],['effort','Est. effort'],['minutes','Recorded time']];
@@ -58,6 +58,7 @@ export function Reporting({requests,tasks,taskStatuses,requestStatuses,taskTypes
  </select></label>;
  const sortValue=(row,key)=>{
   if(key==='title')return row.title??row.file;
+  if(key==='account')return accountLabel(row.account);
   if(key==='status')return label(row.status);
   if(key==='type')return typeLabel(row.type);
   if(key==='typeIds')return row.typeIds.map(typeLabel).sort().join(', ');
@@ -76,9 +77,9 @@ export function Reporting({requests,tasks,taskStatuses,requestStatuses,taskTypes
     onClick={()=>{setView(name);setFilters(previous=>({...previous,status:''}));setSort({key:'due',ascending:true});}}>{name}</button>)}</div>
    <button onClick={()=>setFilters({})}>Clear filters</button></div>
   <div className="report-filters">
-   {filter('account','Account',asOptions(requests.map(item=>item.account)))}
+   {filter('account','Account',asOptions(requests.map(item=>item.account)).map(([id])=>[id,accountLabel(id)]))}
    {filter('operator','Operator',asOptions([...people,...tasks.map(item=>item.person).filter(Boolean)]))}
-   {filter('team','Team',asOptions(groups.map(group=>group.team)))}
+   {filter('team','Team',asOptions(teamGroups.map(group=>group.team)))}
    {filter('type','Task type',taskTypes.map(item=>[item.id,item.label]))}
    {filter('status','Status',statuses.map(item=>[item.id,item.label]))}
    <label>Date field<select value={filters.dateField||'due'} onChange={event=>setFilters({...filters,dateField:event.target.value})}>
@@ -96,7 +97,7 @@ export function Reporting({requests,tasks,taskStatuses,requestStatuses,taskTypes
   </th>)}</tr></thead><tbody>{sorted.map(row=><tr key={row.id}>{columns.map(([key])=><td key={key}>{key==='title'?
    <><button className="link record" onClick={()=>navigate(view==='Tasks'?'Task':'Request',row.id)}>{row.title??row.file}</button><small>{row.id}</small></>:
    key==='due'||key==='modifiedAt'?date(row[key]):key==='minutes'||key==='effort'?formatMinutes(row[key]==null?null:Math.round(row[key])):
-   key==='type'?typeLabel(row.type):key==='typeIds'?row.typeIds.map(typeLabel).sort().join(', ')||'—':key==='status'?label(row.status):Array.isArray(row[key])?row[key].join(', ')||'—':row[key]||'—'}</td>)}</tr>)}</tbody></table>
+   key==='account'?accountLabel(row.account):key==='type'?typeLabel(row.type):key==='typeIds'?row.typeIds.map(typeLabel).sort().join(', ')||'—':key==='status'?label(row.status):Array.isArray(row[key])?row[key].join(', ')||'—':row[key]||'—'}</td>)}</tr>)}</tbody></table>
    {!sorted.length&&<p className="empty">No records match these filters.</p>}</div>
  </section>;
 }

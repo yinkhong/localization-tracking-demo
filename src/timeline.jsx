@@ -111,8 +111,8 @@ function timelineItems(tasks, active, now, includePlan, statuses) {
  });
 }
 
-export function ResourceTimeline({tasks, active, now, zone, date, navigate, toInstant, person,statuses,typeLabel=id=>id}) {
- const teams = [...new Set(groups.map(g => g.team))];
+export function ResourceTimeline({tasks, active, now, zone, date, navigate, toInstant, person,statuses,typeLabel=id=>id,groups:roster=groups}) {
+ const teams = [...new Set(roster.map(g => g.team))];
  const [team, setTeam] = useState('All teams');
  const [day, setDay] = useState(() => {
   const sessions = timelineItems(tasks, active, now, false,statuses).filter(entry => person && entry.operator===person);
@@ -125,7 +125,7 @@ export function ResourceTimeline({tasks, active, now, zone, date, navigate, toIn
  const dayEnd=followingDay && Date.parse(toInstant(followingDay+'T00:00',zone));
  const dayLength=dayEnd-dayStart;
  const entries=timelineItems(tasks,active,now,!person,statuses);
- const members = person ? [{name:'',team:'',members:[person]}] : groups.filter(g => team==='All teams' || g.team===team);
+ const members = person ? [{name:'',team:'',members:[person]}] : roster.filter(g => team==='All teams' || g.team===team);
  const dayEntries=entries.filter(e => e.startedAt < dayEnd && (e.end > dayStart || e.startedAt >= dayStart));
  return <section className="panel resource">
   <div className="panel-header filters"><div><h2>{person ? 'Work timeline' : 'Team resources'}</h2>
@@ -146,7 +146,7 @@ export function ResourceTimeline({tasks, active, now, zone, date, navigate, toIn
        if (e.operator!==member) return false;
        if (person) return true;
        const preferred=e.task.type==='QC'?'QC':e.task.type==='Audio'?'Audio':e.task.type==='Braille'?'Braille':'DTP';
-       const available=groups.filter(g=>g.members.includes(member));
+       const available=roster.filter(g=>g.members.includes(member));
        const match=available.find(g=>g.team===preferred) ?? available[0];
        return group===match;
       }).sort((a,b)=>a.startedAt-b.startedAt);

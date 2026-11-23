@@ -10,11 +10,11 @@ export const rcaSteps={
 };
 const signableFields=['title','request','task','relatedTasks','severity','filePath',...Object.keys(rcaSteps),'attachments'];
 
-export function defectAttribution(request,task,requests,tasks){
+export function defectAttribution(request,task,requests,tasks,roster=groups){
  const linked=tasks.find(item=>item.id===task&&item.request===request);
  const operator=linked?.person||'';
  const teamHint={Preflight:'DTP',Formatting:'DTP',QC:'QC',Audio:'Audio',Braille:'Braille'}[linked?.type];
- const memberships=groups.filter(group=>group.members.includes(operator));
+ const memberships=roster.filter(group=>group.members.includes(operator));
  return {operator,team:(memberships.find(group=>group.team===teamHint)??memberships[0])?.team||'',
   account:requests.find(item=>item.id===request)?.account||''};
 }
@@ -28,7 +28,7 @@ export function defectRevision(record,fields){
 export function bootstrapDefects(state){
  return {...state,defects:state.defects.map(record=>({
   assignedTo:'',reviewedBy:'',revision:1,acknowledgments:[],relatedTasks:[],
-  ...defectAttribution(record.request,record.task,state.requests,state.tasks),...record,
+  ...defectAttribution(record.request,record.task,state.requests,state.tasks,state.teamGroups),...record,
  }))};
 }
 
@@ -41,7 +41,7 @@ export function canEditDefect(record,profile,role){
 }
 
 export function defectChanges(record,fields,context,action){
- const {profile,role,profiles,requests,tasks,timestamp}=context;
+ const {profile,role,profiles,requests,tasks,timestamp,teamGroups}=context;
  if(action==='reopen'){
   return record.status==='Closed'&&role==='Manager'?{status:'Under review'}:null;
  }
@@ -63,7 +63,7 @@ export function defectChanges(record,fields,context,action){
     (Object.hasOwn(updates,'task')&&updates.task!==record.task)){
   const request=updates.request??record.request,task=updates.task??record.task;
   if(!requests.some(item=>item.id===request)||task&&!tasks.some(item=>item.id===task&&item.request===request))return null;
-  Object.assign(updates,defectAttribution(request,task,requests,tasks));
+  Object.assign(updates,defectAttribution(request,task,requests,tasks,teamGroups));
  }
  if(Object.hasOwn(updates,'relatedTasks')){
   const request=updates.request??record.request,task=updates.task??record.task;
@@ -74,10 +74,10 @@ export function defectChanges(record,fields,context,action){
  return Object.fromEntries(Object.entries(updates).filter(([key,value])=>JSON.stringify(value??'')!==JSON.stringify(record[key]??'')));
 }
 
-export function ReviewSelect({label,values,value,onChange,disabled=false,placeholder,className,optionColors}){
+export function ReviewSelect({label,values,value,onChange,disabled=false,placeholder,className,optionColors,labelValue=id=>id}){
  return <select className={className} aria-label={label} value={value??''} disabled={disabled} onChange={event=>onChange(event.target.value)}>
   {placeholder&&<option value="">{placeholder}</option>}
-  {values.map(item=><option key={item} className={optionColors?.[item]}>{item}</option>)}
+  {values.map(item=><option key={item} value={item} className={optionColors?.[item]}>{labelValue(item)}</option>)}
  </select>;
 }
 
@@ -127,14 +127,14 @@ export function RcaTimeline({record,entries,date}){
  </aside>;
 }
 
-export function DefectPerformance({records,profiles}){
+export function DefectPerformance({records,profiles,groups:roster=groups,accountLabel=id=>id}){
  const [dimension,setDimension]=useState('Operator');
  const [account,setAccount]=useState('All accounts');
  const [team,setTeam]=useState('All teams');
  const accounts=[...new Set(records.map(record=>record.account).filter(Boolean))].sort();
- const teams=[...new Set(groups.map(group=>group.team))].sort();
+ const teams=[...new Set(roster.map(group=>group.team))].sort();
  const shown=records.filter(record=>(account==='All accounts'||record.account===account)&&(team==='All teams'||record.team===team));
- const keys=(dimension==='Operator'?Object.keys(profiles).filter(person=>team==='All teams'||groups.some(group=>group.team===team&&group.members.includes(person))):
+ const keys=(dimension==='Operator'?Object.keys(profiles).filter(person=>team==='All teams'||roster.some(group=>group.team===team&&group.members.includes(person))):
   dimension==='Team'?(team==='All teams'?teams:[team]):(account==='All accounts'?accounts:[account]));
  const counts=new Map(keys.map(key=>[key,{total:0,open:0,critical:0,acknowledged:0}]));
  for(const record of shown){
@@ -153,10 +153,10 @@ export function DefectPerformance({records,profiles}){
    <div className="timeline-controls">
     <label>Group by<ReviewSelect label="Group RCA reports by" values={['Operator','Team','Account']} value={dimension} onChange={setDimension}/></label>
     <label>Team<ReviewSelect label="Filter RCA by team" values={['All teams',...teams]} value={team} onChange={setTeam}/></label>
-    <label>Account<ReviewSelect label="Filter RCA by account" values={['All accounts',...accounts]} value={account} onChange={setAccount}/></label>
+    <label>Account<ReviewSelect label="Filter RCA by account" values={['All accounts',...accounts]} value={account} onChange={setAccount} labelValue={id=>id==='All accounts'?id:accountLabel(id)}/></label>
    </div></div>
   {counts.size>0?<div className="table-wrap"><table><thead><tr><th>{dimension}</th><th>Reports</th><th>Open</th><th>Critical</th><th>Acknowledged</th></tr></thead>
-   <tbody>{[...counts.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([name,values])=><tr key={name}><th scope="row">{name}</th>
+   <tbody>{[...counts.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([name,values])=><tr key={name}><th scope="row">{dimension==='Account'?accountLabel(name):name}</th>
     <td className="defect-bar-cell"><span>{values.total}</span><span className="defect-bar" aria-hidden="true"><i style={{width:values.total/max*100+'%'}}/></span></td>
     <td>{values.open}</td><td>{values.critical}</td><td>{values.acknowledged}</td></tr>)}</tbody></table></div>:
    <p className="empty">No reports match these filters.</p>}

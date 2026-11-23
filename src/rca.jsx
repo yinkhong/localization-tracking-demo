@@ -85,14 +85,14 @@ function readImage(file){
  });
 }
 
-export function DefectForm({requests,tasks,config,save,cancel,reviewers,canReview,typeLabel=id=>id}) {
+export function DefectForm({requests,tasks,config,save,cancel,reviewers,canReview,typeLabel=id=>id,accountLabel=id=>id,teamGroups}) {
  const initial=config.existing;
  const [request,setRequest]=useState(initial?.request||config.request||requests[0]?.id||'');
  const [task,setTask]=useState(initial?.task||config.task||'');
  const [relatedTasks,setRelatedTasks]=useState(initial?.relatedTasks??[]);
  const [error,setError]=useState('');
  const [pending,setPending]=useState(false);
- const linked=request===initial?.request&&task===initial?.task?initial:defectAttribution(request,task,requests,tasks);
+ const linked=request===initial?.request&&task===initial?.task?initial:defectAttribution(request,task,requests,tasks,teamGroups);
  const reviewerOptions=current=>[...new Set(['',...reviewers,current||''])];
  const editors=useRef({});
  const selections=useRef({});
@@ -161,7 +161,7 @@ export function DefectForm({requests,tasks,config,save,cancel,reviewers,canRevie
    }}><option value="">Request only</option>
     {tasks.filter(t=>t.request===request).map(t=><option key={t.id} value={t.id}>{t.file} · {typeLabel(t.type)}</option>)}</select></label>
    <div className="reported-operator"><small>Linked operator</small><strong>{linked?.operator||'—'}</strong></div>
-   <div className="reported-operator"><small>Team / account</small><strong>{linked?.team||'—'} / {linked?.account||'—'}</strong></div>
+   <div className="reported-operator"><small>Team / account</small><strong>{linked?.team||'—'} / {accountLabel(linked?.account)||'—'}</strong></div>
    <label>Assigned to<select name="assignedTo" defaultValue={initial?.assignedTo||''} disabled={!canReview}>
     {reviewerOptions(initial?.assignedTo).map(person=><option key={person} value={person}>{person||'Unassigned'}</option>)}</select></label>
    <label>Reviewed by<select name="reviewedBy" defaultValue={initial?.reviewedBy||''} disabled={!canReview}>

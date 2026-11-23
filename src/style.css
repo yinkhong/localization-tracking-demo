@@ -196,3 +196,21 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .report-dashboard th button {background:transparent; border:none; font-size:inherit; padding:0; text-align:left}
 .report-dashboard .tabs {display:flex; gap:5px}
 .report-dashboard .tabs button[aria-pressed=true] {background:#edebfb; color:#453997; border-color:#d3cdef}
+
+.top .crumb {min-width:0}
+.crumb ol {display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; list-style:none; margin:0; padding:0}
+.crumb li+li::before {content:'/'; margin-inline-end:8px; color:#777e93}
+.crumb li button {white-space:normal}
+.crumb li span {margin:0; color:inherit}
+.workflow-table tr.drag-before td {box-shadow:inset 0 2px #685bc4}
+.workflow-table tr.drag-after td {box-shadow:inset 0 -2px #685bc4}
+.workflow-table tr.drag-inside td {background:#eeeafb}
+.root-drop {border:1px dashed #7970bd; color:#4f439b; border-radius:6px; padding:12px; margin:8px 12px; background:#f8f6ff; font-size:.85rem}
+.org-setup {display:flex; flex-wrap:wrap; align-items:end; gap:10px; padding:0 16px 16px}
+.org-setup label,.org-branch>label {display:grid; gap:5px; font-size:.84rem; font-weight:650}
+.org-branches {display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; padding:0 16px 16px}
+.org-branch {border:1px solid var(--line); border-top:3px solid #8177cf; border-radius:8px; padding:13px}
+.org-branch h3 {margin:0 0 10px}
+.org-branch h4 {margin:12px 0 6px}
+.org-members {display:flex; flex-wrap:wrap; gap:7px 12px}
+.org-members label {display:flex; align-items:center; gap:5px; font-size:.83rem}
