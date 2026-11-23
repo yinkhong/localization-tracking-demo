@@ -1,3 +1,4 @@
+import {statusGroup} from './status';
 import React, {useState} from 'react';
 import {zones} from './data';
 
@@ -92,14 +93,14 @@ function hourLabel(timestamp, zone) {
   hourCycle:'h23',timeZoneName:'short'}).format(timestamp);
 }
 
-function timelineItems(tasks, active, now, includePlan) {
+function timelineItems(tasks, active, now, includePlan, statuses) {
  return tasks.flatMap(task => {
   const entries = taskSessions(task, active).map(session => ({...session, task,
    end:session.endedAt ?? Math.max(now, session.startedAt),
    style:session.closedWith==='Completed' ? 'complete' : session.endedAt ? 'worked' : 'running',
    label:session.closedWith || 'Running',
   }));
-  if (includePlan && task.person && task.status!=='Complete') {
+  if (includePlan && task.person && statusGroup(statuses,task.status)!=='Complete') {
    const start=task.scheduledStart ?? Date.parse(task.due);
    if (Number.isFinite(start)) entries.push({task, operator:task.person, startedAt:start,
     end:task.scheduledEnd ?? start, endedAt:task.scheduledEnd ?? start, style:'planned',
@@ -109,11 +110,11 @@ function timelineItems(tasks, active, now, includePlan) {
  });
 }
 
-export function ResourceTimeline({tasks, active, now, zone, date, navigate, toInstant, person}) {
+export function ResourceTimeline({tasks, active, now, zone, date, navigate, toInstant, person,statuses}) {
  const teams = [...new Set(groups.map(g => g.team))];
  const [team, setTeam] = useState('All teams');
  const [day, setDay] = useState(() => {
-  const sessions = timelineItems(tasks, active, now, false).filter(entry => person && entry.operator===person);
+  const sessions = timelineItems(tasks, active, now, false,statuses).filter(entry => person && entry.operator===person);
   const liveSessions = sessions.filter(entry => !entry.sample);
   const latest = Math.max(0, ...(liveSessions.length ? liveSessions : sessions).map(entry => entry.startedAt));
   return localDay(person && latest ? latest : person ? Date.now() : Date.parse('2026-11-24T18:00:00Z'), zone);
@@ -122,7 +123,7 @@ export function ResourceTimeline({tasks, active, now, zone, date, navigate, toIn
  const dayStart=day && Date.parse(toInstant(day+'T00:00',zone));
  const dayEnd=followingDay && Date.parse(toInstant(followingDay+'T00:00',zone));
  const dayLength=dayEnd-dayStart;
- const entries=timelineItems(tasks,active,now,!person);
+ const entries=timelineItems(tasks,active,now,!person,statuses);
  const members = person ? [{name:'',team:'',members:[person]}] : groups.filter(g => team==='All teams' || g.team===team);
  const dayEntries=entries.filter(e => e.startedAt < dayEnd && (e.end > dayStart || e.startedAt >= dayStart));
  return <section className="panel resource">

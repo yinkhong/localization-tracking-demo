@@ -84,3 +84,23 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .activity td { vertical-align:top; min-width:88px; overflow-wrap:anywhere; }
 .activity td:first-child { min-width:126px; }
 .activity td:nth-last-child(-n+2) { min-width:120px; max-width:310px; }
+
+.status-settings { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; padding:0 17px 17px; }
+.status-settings section { border:1px solid var(--line); border-radius:10px; padding:13px; }
+.status-settings h3 { margin:0 0 10px; font-size:.92rem; }
+.status-settings form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px; margin-top:7px; }
+.summary [aria-label="Request status"] { display:block; margin-top:6px; }
+.parent-note { color:var(--muted); font-size:.84rem; }
+.rca-form,.rca-document { padding:clamp(16px,3vw,36px); }
+.rca-form { max-width:980px; }
+.rca-form .form-grid label { display:grid; gap:5px; font-weight:650; font-size:.86rem; }
+.rca-form section,.rca-document section { margin-top:25px; }
+.rca-form h2,.rca-document h2 { margin:0 0 9px; font-size:1rem; }
+.rca-form .editor-tools { flex-wrap:wrap; align-items:center; }
+.rca-content img { max-width:100%; max-height:680px; height:auto; margin:8px 0; vertical-align:middle; }
+.rca-content p { margin:.65em 0; }
+.rca-content { color:#27324f; overflow-wrap:anywhere; }
+.rca-placeholder { color:#65708b; }
+.insert-image { cursor:pointer; border:1px solid var(--line); background:#fff; border-radius:8px; padding:.44rem .65rem; font-size:.85rem; font-weight:650; }
+.insert-image input { position:absolute; width:1px; height:1px; opacity:0; }
+.insert-image:focus-within { outline:2px solid var(--accent); }
