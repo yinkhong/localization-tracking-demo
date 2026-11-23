@@ -1,6 +1,7 @@
 import {statusGroup} from './status';
 import React, {useState} from 'react';
 import {zones} from './data';
+import {formatZoned} from './time-zone';
 
 export const timelineRoles = ['Manager', 'PM', 'Team lead', 'Operator'];
 export const defaultTimelineAccess = {'Manager': true, 'PM': true, 'Team lead': true, 'Operator': false};
@@ -90,8 +91,7 @@ function localDay(timestamp, zone) {
 }
 
 function hourLabel(timestamp, zone) {
- return new Intl.DateTimeFormat('en-US',{timeZone:zones[zone],hour:'2-digit',minute:'2-digit',
-  hourCycle:'h23',timeZoneName:'short'}).format(timestamp);
+ return formatZoned(timestamp,zone,{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 }
 
 function timelineItems(tasks, active, now, includePlan, statuses) {

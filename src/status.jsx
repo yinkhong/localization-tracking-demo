@@ -4,6 +4,8 @@ export const groups = ['To-do','In progress','Complete'];
 export const initialStatuses = [
  {id:'Ready',label:'Ready',group:'To-do'},
  {id:'Waiting',label:'Waiting',group:'To-do'},
+ {id:'Assigned',label:'Assigned',group:'To-do',automatic:true},
+ {id:'Pending',label:'Pending',group:'To-do',automatic:true},
  {id:'In progress',label:'In progress',group:'In progress'},
  {id:'Paused',label:'Paused',group:'In progress'},
  {id:'Complete',label:'Complete',group:'Complete'},
@@ -15,10 +17,13 @@ export function statusGroup(statuses,id) {
 
 
 
+const statusColors={'To-do':'amber','In progress':'blue','Complete':'green'};
+export const statusColor=group=>statusColors[group]??'gray';
+
 export function StatusPicker({statuses,value,onChange,label,disabled=false}) {
- return <select aria-label={label} value={value} onChange={e=>onChange(e.target.value)} disabled={disabled}>
+ return <select className={'status-picker '+statusColor(statusGroup(statuses,value))} aria-label={label} value={value} onChange={e=>onChange(e.target.value)} disabled={disabled}>
   {groups.map(group=>[group,statuses.filter(status=>status.group===group)]).filter(([,items])=>items.length).map(([group,items])=><optgroup label={group} key={group}>
-   {items.map(status=><option key={status.id} value={status.id}>{status.label}</option>)}
+   {items.map(status=><option className={statusColor(group)} key={status.id} value={status.id}>{status.label}</option>)}
   </optgroup>)}
  </select>;
 }
@@ -66,9 +71,49 @@ export function dependencyIds(task,tasks) {
  return [...new Set(predecessors)].filter(id=>!chain.has(id));
 }
 
-export function blockedTask(task,tasks,statuses) {
- return dependencyIds(task,tasks).some(id=>tasks.some(item=>item.id===id&&statusGroup(statuses,item.status)!=='Complete'));
+export function incompletePredecessors(task,tasks,statuses) {
+ const ids=dependencyIds(task,tasks);
+ return tasks.filter(item=>ids.includes(item.id)&&statusGroup(statuses,item.status)!=='Complete');
 }
+
+export function blockedTask(task,tasks,statuses) {
+ return incompletePredecessors(task,tasks,statuses).length>0;
+}
+
+export function dependencyError(task,tasks,statuses) {
+ const blockers=incompletePredecessors(task,tasks,statuses);
+ return blockers.length?'Complete '+blockers.map(item=>item.type+' ('+item.id+')').join(', ')+
+  ' before advancing '+task.type+' ('+task.id+').':'';
+}
+
+export function workflowOrder(tasks) {
+ const preferred=[];
+ const listed=new Set();
+ const latestFirst=[...tasks].reverse();
+ function list(parent) {
+  if(listed.has(parent.id))return;
+  listed.add(parent.id);
+  preferred.push(parent);
+  latestFirst.filter(task=>task.parentTask===parent.id).forEach(list);
+ }
+ const byId=new Map(tasks.map(task=>[task.id,task]));
+ latestFirst.filter(task=>!byId.has(task.parentTask)).forEach(list);
+ latestFirst.forEach(list);
+ const visited=new Set(), visiting=new Set(), ordered=[];
+ function visit(task) {
+  if(!task||visited.has(task.id)||visiting.has(task.id))return;
+  visiting.add(task.id);
+  visit(byId.get(task.parentTask));
+  dependencyIds(task,tasks).forEach(id=>visit(byId.get(id)));
+  visiting.delete(task.id);
+  visited.add(task.id);
+  ordered.push(task);
+ }
+ preferred.forEach(visit);
+ return ordered;
+}
+
+export const isDependencyStatus=id=>['Waiting','Assigned','Pending'].includes(id);
 
 export function resolveTasks(tasks,statuses,timestamp) {
  const parents=parentTaskIds(tasks);
@@ -83,10 +128,10 @@ export function resolveTasks(tasks,statuses,timestamp) {
     if(task.status!==status||task.person||task.assignedAt!=null){
      return {...task,status,person:'',assignedAt:null,modifiedAt:timestamp};
     }
-   }else if(task.status==='Waiting'&&!blockedTask(task,prior,statuses)){
-    return {...task,status:'Ready',modifiedAt:timestamp};
-   }else if(statusGroup(statuses,task.status)==='To-do'&&task.status==='Ready'&&blockedTask(task,prior,statuses)){
-    return {...task,status:'Waiting',modifiedAt:timestamp};
+   }else if(statusGroup(statuses,task.status)==='To-do'){
+    const status=blockedTask(task,prior,statuses)?(task.person?'Assigned':'Pending'):
+     isDependencyStatus(task.status)?'Ready':task.status;
+    if(status!==task.status)return {...task,status,modifiedAt:timestamp};
    }
    return task;
   });
@@ -97,7 +142,8 @@ export function resolveTasks(tasks,statuses,timestamp) {
 }
 
 export function bootstrapStatuses(state) {
- const statuses=state.statuses??initialStatuses;
+ const stored=state.statuses??initialStatuses;
+ const statuses=[...stored,...initialStatuses.filter(status=>!stored.some(item=>item.id===status.id))];
  const timestamp=Date.now();
  const parents=parentTaskIds(state.tasks);
  const activeTimers={...state.activeTimers};

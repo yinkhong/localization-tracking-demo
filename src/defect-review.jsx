@@ -74,10 +74,10 @@ export function defectChanges(record,fields,context,action){
  return Object.fromEntries(Object.entries(updates).filter(([key,value])=>JSON.stringify(value??'')!==JSON.stringify(record[key]??'')));
 }
 
-export function ReviewSelect({label,values,value,onChange,disabled=false,placeholder}){
- return <select aria-label={label} value={value??''} disabled={disabled} onChange={event=>onChange(event.target.value)}>
+export function ReviewSelect({label,values,value,onChange,disabled=false,placeholder,className,optionColors}){
+ return <select className={className} aria-label={label} value={value??''} disabled={disabled} onChange={event=>onChange(event.target.value)}>
   {placeholder&&<option value="">{placeholder}</option>}
-  {values.map(item=><option key={item}>{item}</option>)}
+  {values.map(item=><option key={item} className={optionColors?.[item]}>{item}</option>)}
  </select>;
 }
 

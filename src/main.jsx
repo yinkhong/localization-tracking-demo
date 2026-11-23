@@ -2,14 +2,15 @@ import React, {useEffect,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {demoRequests,demoTasks,demoDefects,estimate,formatMinutes,operatorRanking,types,zones} from './data';
 import {audit, bootstrapTimeline, groups, Metadata, patchRecord, ResourceTimeline, SessionList, TimelineAdmin, timelineRoles} from './timeline';
-import {ActivityLog, bootstrapWorkflow, demoProfiles, FileWorkflows, InlineDue, TaskSelect, TaskStatus, withActivity} from './workflow';
-import {blockedTask, bootstrapStatuses, dependencyIds, parentTaskIds, resolveTasks, StatusAdmin, StatusPicker, statusGroup} from './status';
+import {ActivityLog, bootstrapWorkflow, demoProfiles, FileWorkflows, InlineDue, TaskSelect, TaskStatus, withActivity, ZonedInput} from './workflow';
+import {blockedTask, bootstrapStatuses, dependencyError, dependencyIds, isDependencyStatus, parentTaskIds, resolveTasks, StatusAdmin, StatusPicker, statusColor, statusGroup} from './status';
 import {DefectForm, RcaBody} from './rca';
 import {Acknowledgment, bootstrapDefects, defectAttribution, defectChanges, DefectPerformance, defectSeverities, defectStatuses, canEditDefect, RcaTimeline, ReviewSelect, reviewRoles} from './defect-review';
+import {formatZoned, zoneCode} from './time-zone';
 import './style.css';
 
 const sections=[['Overview','◫'],['Requests','▤'],['Planning','▦'],['My work','✓'],['Defects','◇']];
-const palette={'In progress':'blue','Under review':'blue','Ready':'green','On track':'green','Complete':'green','Trained':'green','Fits':'green','At risk':'red','Major':'red','Waiting':'amber','Paused':'amber','Does not fit':'amber','Open':'amber','Unscheduled':'gray','Historical':'blue','Page-based':'green'};
+const palette={'In progress':'blue','Under review':'blue','Ready':'green','On track':'green','Complete':'green','Trained':'green','Fits':'green','At risk':'red','Major':'red','Waiting':'amber','Paused':'amber','Does not fit':'amber','Open':'amber','Unscheduled':'gray','Closed':'green','Historical':'blue','Page-based':'green'};
 const badge = name => <span className={'badge '+(palette[name]||'gray')}><i/>{name}</span>;
 const clock = n => [Math.floor(n/3600),Math.floor(n/60)%60,n%60].map(x=>String(x).padStart(2,'0')).join(':');
 const dataKey='localization-workspace-v1';
@@ -21,7 +22,7 @@ function load(){
  return bootstrapDefects(bootstrapStatuses(bootstrapWorkflow(bootstrapTimeline({requests:demoRequests,tasks:demoTasks,defects:demoDefects,zone:'Pacific',active:null},true))));
 }
 function App(){
- const [state,setState]=useState(load),[view,setView]=useState(()=>state.profiles[state.profile].role==='Operator'?'My work':'Overview'),[record,setRecord]=useState(''),[query,setQuery]=useState(''),[filter,setFilter]=useState('All'),[dialog,setDialog]=useState(null),[notice,setNotice]=useState(''),[now,setNow]=useState(Date.now()),[mode,setMode]=useState('Table'),[projectTab,setProjectTab]=useState('Tasks');
+ const [state,setState]=useState(load),[view,setView]=useState(()=>state.profiles[state.profile].role==='Operator'?'My work':'Overview'),[record,setRecord]=useState(''),[query,setQuery]=useState(''),[filter,setFilter]=useState('All'),[dialog,setDialog]=useState(null),[notice,setNotice]=useState(''),[workflowError,setWorkflowError]=useState(''),[now,setNow]=useState(Date.now()),[mode,setMode]=useState('Table'),[projectTab,setProjectTab]=useState('Tasks');
  const {requests,tasks,defects,timelineAccess,activityAccess,activeTimers,profile,profiles,workflowFiles,activity,statuses}=state;
  const {role,zone}=profiles[profile];
  const active=activeTimers[profile];
@@ -30,7 +31,7 @@ function App(){
  const parents=parentTaskIds(tasks);
  const statusName=id=>statuses.find(status=>status.id===id)?.label??id;
  const phase=id=>statusGroup(statuses,id);
- const statusBadge=id=><span className={'badge '+({'To-do':'amber','In progress':'blue','Complete':'green'}[phase(id)]??'gray')} title={phase(id)}><i/>{statusName(id)}</span>;
+ const statusBadge=id=><span className={'badge '+statusColor(phase(id))} title={phase(id)}><i/>{statusName(id)}</span>;
  const canReview=reviewRoles.includes(role);
  const reviewers=Object.keys(profiles).filter(name=>reviewRoles.includes(profiles[name].role));
  const canSeeActivity=Boolean(activityAccess[role]);
@@ -41,12 +42,11 @@ function App(){
  useEffect(()=>{if(!Object.keys(activeTimers).length)return;const id=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(id);},[activeTimers]);
  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),3200);return()=>clearTimeout(t);},[notice]);
  useEffect(()=>{const close=e=>{if(e.key==='Escape')setDialog(null);};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[]);
- const historyDate = value => value == null ? '—' : new Intl.DateTimeFormat('en-US',{
-  timeZone:zones[zone],year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZoneName:'short'
- }).format(new Date(value));
- const date=v=>v?new Intl.DateTimeFormat('en-US',{timeZone:zones[zone]||zones.Pacific,month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZoneName:'short'}).format(new Date(v)):'—';
- const short=v=>v?new Intl.DateTimeFormat('en-US',{timeZone:zones[zone]||zones.Pacific,hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZoneName:'short'}).format(new Date(v)):'—';
- const navigate=(next,id='')=>{setDialog(null);setView(next);setRecord(id);setFilter('All');setQuery('');setProjectTab('Tasks');window.scrollTo(0,0);};
+ const displayTime={hour:'2-digit',minute:'2-digit',hourCycle:'h23'};
+ const historyDate=value=>formatZoned(value,zone,{...displayTime,year:'numeric',month:'short',day:'numeric',second:'2-digit'});
+ const date=value=>formatZoned(value,zone,{...displayTime,month:'short',day:'numeric'});
+ const short=value=>formatZoned(value,zone,displayTime);
+ const navigate=(next,id='')=>{setDialog(null);setWorkflowError('');setView(next);setRecord(id);setFilter('All');setQuery('');setProjectTab('Tasks');window.scrollTo(0,0);};
  const requestOf=id=>requests.find(r=>r.id===id);
  const taskOf=id=>tasks.find(t=>t.id===id);
  const req=requestOf(record), task=taskOf(record), defect=defects.find(d=>d.id===record);
@@ -112,6 +112,11 @@ function App(){
   setState(s=>({...s,profiles:{...s.profiles,[profile]:{...s.profiles[profile],...update}}}));
  }
  function changeTask(id,fields){
+  const current=taskOf(id);
+  if(!current)return;
+  const error=fields.status&&phase(fields.status)!=='To-do'&&dependencyError(current,tasks,statuses);
+  if(error){setWorkflowError(error);return;}
+  setWorkflowError('');
   const action=Object.hasOwn(fields,'person')?'Changed assignee':Object.hasOwn(fields,'status')?'Changed status':'Updated task';
   commit(action,(s,timestamp)=>{
    const task=s.tasks.find(item=>item.id===id);
@@ -130,7 +135,10 @@ function App(){
   });
  }
  function start(task){
-  if(task.person!==profile||parents.has(task.id)||phase(task.status)==='Complete'||taskBlocked(task))return;
+  if(task.person!==profile||parents.has(task.id)||phase(task.status)==='Complete')return;
+  const error=dependencyError(task,tasks,statuses);
+  if(error){setWorkflowError(error);return;}
+  setWorkflowError('');
   if(active){if(active.id!==task.id)setDialog({kind:'timer',target:task});return;}
   const timestamp=Date.now();
   const openedWith=task.status==='Paused'?'Resumed':'Started';
@@ -169,7 +177,8 @@ function App(){
  const tabs = (values,selected,onSelect) => <div className="segments">{values.map(v=><button key={v} aria-pressed={selected===v} className={selected===v?'selected':''} onClick={()=>onSelect(v)}>{v}</button>)}</div>;
  function taskAction(t){
   if(active?.id===t.id)return <button onClick={()=>stop()}>Pause</button>;
-  if(parents.has(t.id)||phase(t.status)==='Complete'||taskBlocked(t)||!editable(t))return <button onClick={()=>navigate('Task',t.id)}>View</button>;
+  if(parents.has(t.id)||phase(t.status)==='Complete'||!editable(t))return <button onClick={()=>navigate('Task',t.id)}>View</button>;
+  if(taskBlocked(t)&&t.person!==profile)return <button onClick={()=>navigate('Task',t.id)}>View</button>;
   if(t.person&&t.person!==profile)return <button onClick={()=>navigate('Task',t.id)}>View</button>;
   if(!t.person)return <button onClick={()=>setDialog({kind:'rank',task:t})}>Suggest operator</button>;
   return <button onClick={()=>start(t)}>{t.status==='Paused'?'Resume':'Start timer'}</button>;
@@ -196,7 +205,7 @@ function App(){
  const name=e.target.value;setDialog(null);setState(s=>({...s,profile:name}));
  navigate(profiles[name].role==='Operator'?'My work':'Overview');
  }}>{Object.keys(demoProfiles).map(name=><option key={name}>{name}</option>)}</select></label>
- <label>Role <select value={role} onChange={e=>{const r=e.target.value;setDialog(null);changeProfilePreference({role:r});navigate(r==='Operator'?'My work':'Overview');}}>{timelineRoles.map(x=><option key={x}>{x}</option>)}</select></label><label>Time zone <select value={zone} onChange={e=>changeProfilePreference({zone:e.target.value})}>{Object.keys(zones).map(z=><option key={z}>{z}</option>)}</select></label></div></header>
+ <label>Role <select value={role} onChange={e=>{const r=e.target.value;setDialog(null);changeProfilePreference({role:r});navigate(r==='Operator'?'My work':'Overview');}}>{timelineRoles.map(x=><option key={x}>{x}</option>)}</select></label><label>Time zone <select value={zone} onChange={e=>changeProfilePreference({zone:e.target.value})}>{Object.keys(zones).map(z=><option key={z} value={z}>{zoneCode(z,now)}</option>)}</select></label></div></header>
  <main>
  {dialog?.kind==='defect'?<>
   <div className="heading"><div><h1>{dialog.existing?'Edit RCA report':'New RCA report'}</h1></div></div>
@@ -205,6 +214,7 @@ function App(){
  </>:<>
  {['Request','Task','Defect'].includes(view)&&<button className="link back" onClick={()=>navigate(view==='Request'?'Requests':view==='Task'?(task?.parentTask?'Task':role==='Operator'?'My work':'Request'):'Defects',task?.parentTask||task?.request)}>‹ Back</button>}
  <div className="heading"><div><h1>{heading?.[0]}</h1><p>{heading?.[1]}</p></div>{(['Overview','Requests'].includes(view)&&role!=='Operator')&&<button className="primary" onClick={()=>setDialog({kind:'request'})}>＋ New request</button>}{view==='Defects'&&<button className="primary" onClick={()=>setDialog({kind:'defect'})}>＋ New report</button>}</div>
+ {workflowError&&<div className="workflow-error" role="alert"><span>{workflowError}</span><button aria-label="Dismiss error" onClick={()=>setWorkflowError('')}>Dismiss</button></div>}
  {activeTask&&<div className="timer"><div>{badge('In progress')} <button className="link" onClick={()=>navigate('Task',activeTask.id)}>{activeTask.file} · {activeTask.type}</button></div><div><strong>{clock(elapsed)}</strong><button onClick={()=>stop()}>Pause</button><button className="primary" onClick={()=>stop(true)}>Complete</button></div></div>}
  {view==='Overview'&&<>
  <div className="metrics">{stats.map(([label,value,detail,icon])=><div className="metric" key={label}><div className="metric-top"><span>{label}</span><b>{icon}</b></div><strong>{value}</strong><small>{detail}</small></div>)}</div>
@@ -213,8 +223,8 @@ function App(){
  <section className="panel"><div className="panel-header"><h2>Recent requests</h2><button onClick={()=>navigate('Requests')}>View all requests</button></div>{requestTable(requests.slice(0,4))}</section></>}
  {view==='Overview'&&role==='Manager'&&<DefectPerformance records={defects} profiles={profiles}/>}
  {view==='Requests'&&<section className="panel"><div className="panel-header filters">{searchInput('Search requests')}{selectFilter(['All','At risk','On track','Unscheduled'])}</div>{requestTable(requests.filter(r=>search(r.title,r.id,r.account)&&(filter==='All'||r.risk===filter)))}</section>}
- {view==='Request'&&req&&<><section className="panel summary"><div>{statusBadge(req.status)} {badge(req.risk)}{canManage&&<StatusPicker label="Request status" statuses={statuses} value={req.status}
-  onChange={status=>commit('Changed request status',(s,timestamp)=>({...s,requests:s.requests.map(r=>r.id===req.id?patchRecord(r,{status},timestamp):r)}))}/>}</div><div><small>Project owner</small>{canManage?<select aria-label="Project owner" value={req.owner||''} onChange={e=>{
+ {view==='Request'&&req&&<><section className="panel summary"><div>{canManage?<StatusPicker label="Request status" statuses={statuses.filter(status=>!isDependencyStatus(status.id)||status.id===req.status)} value={req.status}
+  onChange={status=>commit('Changed request status',(s,timestamp)=>({...s,requests:s.requests.map(r=>r.id===req.id?patchRecord(r,{status},timestamp):r)}))}/>:statusBadge(req.status)} {badge(req.risk)}</div><div><small>Project owner</small>{canManage?<select aria-label="Project owner" value={req.owner||''} onChange={e=>{
  const owner=e.target.value;
  commit('Changed project owner',(s,timestamp)=>({...s,requests:s.requests.map(r=>r.id===req.id?patchRecord(r,{owner},timestamp,'owner'):r)}));
  }}><option value="">Unassigned</option>{people.map(person=><option key={person}>{person}</option>)}</select>:<strong>{req.owner||'Unassigned'}</strong>}</div><div><small>Due</small><strong>{date(req.due)}</strong></div><div><small>Forecast finish</small><strong>{date(req.forecast)}</strong></div><div><small>Estimated active effort</small><strong>{formatMinutes(req.initialMinutes)}</strong></div></section>
@@ -227,7 +237,7 @@ function App(){
  {projectTab==='Escalations & defects'&&<section className="panel">{defectTable(defects.filter(d=>d.request===req.id))}</section>}
  {['Tasks','Files & workflows'].includes(projectTab)&&<FileWorkflows files={requestFiles} tasks={requestTasks} account={req.account}
   openTask={id=>navigate('Task',id)} locked={isRunning} addTask={file=>setDialog({kind:'newtask',request:req.id,file})}
-  addSubtask={addSubtask} canAddSubtask={canAddSubtask}
+  addSubtask={addSubtask} canAddSubtask={canAddSubtask} showError={setWorkflowError}
   {...{people,canManage,editable,changeTask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant}}/>}
  <Metadata record={req} date={historyDate}/></>}
  {view==='Planning'&&canManage&&<>
@@ -247,9 +257,9 @@ function App(){
  {view==='My work'&&<section className="panel"><div className="panel-header filters">{tabs(['Table','Cards'],mode,setMode)}{<select aria-label="Filter status" value={filter} onChange={e=>setFilter(e.target.value)}><option value="All">All statuses</option>
  {['To-do','In progress','Complete'].map(group=><optgroup key={group} label={group}>{statuses.filter(status=>status.group===group).map(status=>
   <option key={status.id} value={status.id}>{status.label}</option>)}</optgroup>)}</select>}</div>{(()=>{const items=tasks.filter(t=>!parents.has(t.id)&&t.person===profile&&(filter==='All'||t.status===filter));return mode==='Table'?taskTable(items):<div className="task-cards">{items.map(t=><article key={t.id}><small>{t.type} · {t.request}</small><button className="link record" onClick={()=>navigate('Task',t.id)}>{t.file}</button>{statusBadge(t.status)}<p>{date(t.due)}</p>{taskAction(t)}</article>)}{!items.length&&<p className="empty">No matching tasks.</p>}</div>;})()}</section>}
- {view==='Task'&&task&&<><section className="panel details"><div className="panel-header"><div>{statusBadge(task.status)} <button className="link" onClick={()=>navigate('Request',task.request)}>{task.request}</button></div>{taskAction(task)}</div>
+ {view==='Task'&&task&&<><section className="panel details"><div className="panel-header"><div>{(taskIsParent||!editable(task))&&statusBadge(task.status)} <button className="link" onClick={()=>navigate('Request',task.request)}>{task.request}</button></div>{taskAction(task)}</div>
  <div className="properties"><div><small>Account</small><strong>{requestOf(task.request)?.account}</strong></div><div><small>Assignee</small>{taskIsParent?<strong>Subtasks only</strong>:canManage?<select aria-label="Task assignee" disabled={isRunning(task.id)}
- value={task.person} onChange={e=>changeTask(task.id,{person:e.target.value})}><option value="">Unassigned</option>{people.map(person=><option key={person}>{person}</option>)}</select>:<strong>{task.person||'Unassigned'}</strong>}</div><div><small>Due · {zone}</small>{canManage?<InlineDue task={task} zone={zone} localValue={localValue} toInstant={toInstant} save={fields=>changeTask(task.id,fields)}/>:<strong>{date(task.due)}</strong>}</div>
+ value={task.person} onChange={e=>changeTask(task.id,{person:e.target.value})}><option value="">Unassigned</option>{people.map(person=><option key={person}>{person}</option>)}</select>:<strong>{task.person||'Unassigned'}</strong>}</div><div><small>Due</small>{canManage?<InlineDue task={task} zone={zone} showError={setWorkflowError} localValue={localValue} toInstant={toInstant} save={fields=>changeTask(task.id,fields)}/>:<strong>{date(task.due)}</strong>}</div>
  {canManage&&<div><small>Task type</small><TaskSelect label="Task type" value={task.type} options={types} disabled={isRunning(task.id)} save={type=>changeTask(task.id,{type})}/></div>}
  {!taskIsParent&&editable(task)&&<div><small>Status</small><TaskStatus task={task} statuses={statuses} locked={isRunning(task.id)} blocked={taskBlocked(task)} save={fields=>changeTask(task.id,fields)}/></div>}
  {taskIsParent&&<div><small>Progress</small><strong>{tasks.filter(t=>t.parentTask===task.id&&phase(t.status)==='Complete').length} of {tasks.filter(t=>t.parentTask===task.id).length} subtasks complete</strong></div>}<div><small>Recorded effort</small><strong>{clock((task.spent??0)+(isRunning(task.id)?Math.max(0,Math.floor((now-timers.find(timer=>timer.id===task.id).started)/1000)):0))}</strong></div></div>
@@ -269,7 +279,7 @@ function App(){
  {view==='Defects'&&<section className="panel"><div className="panel-header filters">{searchInput('Search defect reports')}{selectFilter(['All','Open','Under review','Closed'])}</div>{defectTable(defects.filter(d=>search(d.id,d.title,d.request)&&(filter==='All'||d.status===filter)))}</section>}
  {view==='Defect'&&defect&&<>
   <section className="panel rca-record">
-   <div className="panel-header"><div>{badge(defect.status)} {badge(defect.severity)} {defectLocked&&<span className="badge gray">Locked</span>}</div>
+   <div className="panel-header"><div>{badge(defect.severity)} {defectLocked&&<span className="badge gray">Locked</span>}</div>
     {defectLocked?role==='Manager'&&<button onClick={()=>updateDefect(defect.id,{},'reopen','Reopened defect report')}>Reopen report</button>:
      canEditDefect(defect,profile,role)&&<button onClick={()=>setDialog({kind:'defect',existing:defect})}>Edit report</button>}</div>
    <div className="properties">
@@ -279,7 +289,7 @@ function App(){
     <div><small>Reviewed by</small><ReviewSelect label="Reviewed by" values={[...new Set([...reviewers,defect.reviewedBy].filter(Boolean))]}
      value={defect.reviewedBy} placeholder="Not reviewed" disabled={defectLocked||!canReview}
      onChange={reviewedBy=>updateDefect(defect.id,{reviewedBy},'edit','Changed RCA reviewer')}/></div>
-    <div><small>Status</small><ReviewSelect label="RCA status" values={defectStatuses} value={defect.status} disabled={defectLocked||!canReview}
+    <div><small>Status</small><ReviewSelect label="RCA status" className={'status-picker '+palette[defect.status]} optionColors={palette} values={defectStatuses} value={defect.status} disabled={defectLocked||!canReview}
      onChange={status=>updateDefect(defect.id,{status},'edit',status==='Closed'?'Closed defect report':'Changed RCA status')}/></div>
     <div><small>Severity</small><ReviewSelect label="RCA severity" values={defectSeverities} value={defect.severity} disabled={defectLocked||!canReview}
      onChange={severity=>updateDefect(defect.id,{severity},'edit','Changed RCA severity')}/></div>
@@ -372,8 +382,8 @@ function ScheduleFields({task, zone, save}){
   }
   setError('');save({scheduledStart,scheduledEnd});
  }}>
-  <label>Scheduled start ({zone})<input name="start" type="datetime-local" defaultValue={localValue(task.scheduledStart,zone)}/></label>
-  <label>Scheduled end ({zone})<input name="end" type="datetime-local" defaultValue={localValue(task.scheduledEnd,zone)}/></label>
+  <label>Scheduled start<ZonedInput name="start" zone={zone} toInstant={toInstant} initial={localValue(task.scheduledStart,zone)}/></label>
+  <label>Scheduled end<ZonedInput name="end" zone={zone} toInstant={toInstant} initial={localValue(task.scheduledEnd,zone)}/></label>
   <button type="submit">Save schedule</button>
   {error&&<p className="error" role="alert">{error}</p>}
  </form>;
@@ -414,7 +424,7 @@ function RequestForm({save,zone='Pacific'}){
  <label>Request title<input name="title" placeholder="e.g. Member handbook refresh" required maxLength="80"/></label>
  <div className="form-grid"><label>Account<select value={account} onChange={e=>setAccount(e.target.value)}>{['Account A','Account B','Account C'].map(a=><option key={a}>{a}</option>)}</select></label>
  <label>Planned files<input type="number" min="1" max="10000" required value={files} onChange={e=>{const qty=Number(e.target.value);setFiles(qty);setCounts(c=>Object.fromEntries(Object.entries(c).map(([t,n])=>[t,n===null?null:Math.min(n,qty)])));}}/></label></div>
- <label>Target due · {zone}<input type="datetime-local" name="due" defaultValue="2026-11-27T17:00" required/></label>
+ <label>Target due<ZonedInput zone={zone} toInstant={toInstant} name="due" initial="2026-11-27T17:00" required/></label>
  <fieldset><legend>Task types</legend><div className="check-row">{types.map(t=><label key={t}><input type="checkbox" checked={t in counts} onChange={()=>setCounts(c=>{const next={...c};if(t in next)delete next[t];else next[t]=null;return next;})}/>{t}</label>)}</div></fieldset>
  <div className="table-wrap preview-table"><table><thead><tr><th>Task type</th><th>Files</th><th>Average / file</th><th>Effort</th></tr></thead><tbody>{rows.map(r=><tr key={r.type}><td>{r.type}</td><td><input aria-label={r.type+' applicable files'} type="number" min="1" max={files} required value={r.qty} onChange={e=>setCounts(c=>({...c,[r.type]:Number(e.target.value)}))}/></td><td>{formatMinutes(r.minutes)}{r.samples&&<small>{r.samples} historical files</small>}</td><td>{formatMinutes(r.minutes===null?null:r.qty*r.minutes)}</td></tr>)}</tbody></table></div>
  <div className="note"><strong>{partial?'Known subtotal':'Estimated active effort'}: {formatMinutes(sum)}</strong><br/>{partial?'Some task types have no matching history.':'Forecast finish depends on calendars and dependencies.'}</div>

@@ -71,7 +71,6 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .workflow-table td,.workflow-table th { padding:8px 10px; }
 .workflow-table input,.workflow-table select { font-size:.84rem; padding-top:.38rem; padding-bottom:.38rem; }
 .workflow-table input[type=number] { width:76px; }
-.workflow-table td:has(.badge) select { display:block; margin-top:4px; }
 .workflow-table .record { white-space:nowrap; }
 .workflow-table .record span { color:var(--accent); font-size:.8rem; }
 .workflow-subtask td:first-child { padding-left:22px; }
@@ -137,3 +136,16 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .rca-extra-links { margin-top:14px; color:#27324f; }
 .rca-extra-links summary { cursor:pointer; font-weight:650; font-size:.87rem; }
 .rca-extra-links label { display:flex; align-items:center; gap:7px; margin-top:5px; font-size:.83rem; }
+
+.status-picker { border-radius:8px; font-weight:700; min-width:112px; }
+.status-picker.amber,.status-picker option.amber { background-color:#fff1cc; color:#785000; border-color:#f0d78e; }
+.status-picker.blue,.status-picker option.blue { background-color:#e9eafe; color:#39318e; border-color:#cecbf7; }
+.status-picker.green,.status-picker option.green { background-color:#dcf4e8; color:#165841; border-color:#b7e4cf; }
+.status-picker.gray,.status-picker option.gray { background-color:#f0f1f6; color:#434d63; }
+.status-picker:disabled { opacity:.82; cursor:default; }
+.summary [aria-label="Request status"] { display:inline-block; margin:0 4px 0 0; }
+.zoned-input { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.zone-code { font-size:.75rem; font-weight:700; color:var(--muted); }
+.workflow-blocked { color:#835400; }
+.workflow-error { background:#fff0ee; color:#852e27; border:1px solid #ecb4ad; border-radius:10px; padding:10px 14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; position:sticky; top:12px; z-index:5; }
+.workflow-error button { color:inherit; }
