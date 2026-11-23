@@ -60,9 +60,10 @@ export function Metadata({record, date}) {
 
 export function taskSessions(task, active) {
  const saved = task.sessions ?? [];
- return active?.id === task.id ? [...saved, {
-  startedAt:active.started, endedAt:null, operator:active.operator ?? task.person,
-  openedWith:active.openedWith ?? 'Started', closedWith:null,
+ const running=Array.isArray(active)?active.find(timer=>timer.id===task.id):active;
+ return running?.id === task.id ? [...saved, {
+  startedAt:running.started, endedAt:null, operator:running.operator ?? task.person,
+  openedWith:running.openedWith ?? 'Started', closedWith:null,
  }] : saved;
 }
 
@@ -167,9 +168,9 @@ export function ResourceTimeline({tasks, active, now, zone, date, navigate, toIn
  </section>;
 }
 
-export function TimelineAdmin({access, onChange}) {
- return <section className="panel"><div className="panel-header"><div><h2>Team resource access</h2>
-  <p>Choose which roles can see other operators’ schedules and work sessions.</p></div></div>
+export function TimelineAdmin({access, onChange, title='Team resource access', description='Choose which roles can see other operators’ schedules and work sessions.'}) {
+ return <section className="panel"><div className="panel-header"><div><h2>{title}</h2>
+  <p>{description}</p></div></div>
   <div className="role-permissions">{timelineRoles.map(role=><label key={role}>
    <input type="checkbox" checked={Boolean(access[role])} onChange={e=>onChange(role,e.target.checked)}/>
    <span>{role}</span></label>)}</div>

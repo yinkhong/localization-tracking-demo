@@ -55,3 +55,32 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
  .sidebar .account,.sidebar-link { width:auto; }
  .resource .panel-header { flex-wrap:wrap; }
 }
+
+.request-toolbar { padding:0; margin:0 0 13px; flex-wrap:wrap; }
+.file-workflows { display:grid; gap:12px; margin-bottom:18px; }
+.file-workflow,.task-activity {
+ background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;
+}
+.file-workflow>summary,.task-activity>summary {
+ padding:14px 17px; cursor:pointer; color:#27324f; font-weight:700; font-size:.9rem;
+}
+.file-workflow>summary strong { margin-left:5px; }
+.file-workflow>summary span { margin-left:14px; color:var(--muted); font-size:.8rem; font-weight:550; }
+.file-workflow>summary:hover,.task-activity>summary:hover { background:#f6f6ff; }
+.file-workflow>summary:focus-visible,.task-activity>summary:focus-visible { outline:2px solid var(--accent); outline-offset:-3px; }
+.workflow-table td,.workflow-table th { padding:8px 10px; }
+.workflow-table input,.workflow-table select { font-size:.84rem; padding-top:.38rem; padding-bottom:.38rem; }
+.workflow-table input[type=number] { width:76px; }
+.workflow-table td:has(.badge) select { display:block; margin-top:4px; }
+.workflow-table .record { white-space:nowrap; }
+.workflow-table .record span { color:var(--accent); font-size:.8rem; }
+.workflow-subtask td:first-child { padding-left:22px; }
+.workflow-actions { display:flex; gap:5px; }
+.workflow-actions button { padding:.35rem .5rem; }
+.workflow-footer { padding:9px 14px; border-top:1px solid var(--line); }
+.workflow-footer button { color:var(--accent); }
+.task-activity { margin-bottom:17px; }
+.task-activity .panel { margin:0; border:0; border-radius:0; }
+.activity td { vertical-align:top; min-width:88px; overflow-wrap:anywhere; }
+.activity td:first-child { min-width:126px; }
+.activity td:nth-last-child(-n+2) { min-width:120px; max-width:310px; }
