@@ -36,7 +36,7 @@ const trackedFields = {
  requests:['title','account','owner','status','risk','due','forecast','files','types','initialMinutes'],
  workflowFiles:['name'],
  tasks:['type','person','pages','status','due','scheduledStart','scheduledEnd','dependsOn','parentTask','spent'],
- defects:['title','severity','status','request','task','description','filePath','steps','rootCause','corrective','preventive','attachments'],
+ defects:['title','severity','status','request','task','relatedTasks','description','filePath','steps','rootCause','corrective','preventive','attachments','assignedTo','reviewedBy','operator','team','account','acknowledgments'],
 };
 const recordNames = {requests:'Request',workflowFiles:'File',tasks:'Task',defects:'Defect'};
 const fieldNames = {
@@ -44,19 +44,22 @@ const fieldNames = {
  status:'Status',risk:'Delivery risk',due:'Due',forecast:'Forecast',files:'Planned files',types:'Task types',
  initialMinutes:'Estimated effort (min)',name:'File name',scheduledStart:'Scheduled start',
  scheduledEnd:'Scheduled end',dependsOn:'Predecessor',parentTask:'Parent task',spent:'Recorded work (sec)',
- severity:'Severity',request:'Related request',task:'Related task',description:'Incident summary',filePath:'File path',steps:'Steps & operators',rootCause:'Root cause',corrective:'Corrective actions',preventive:'Preventive actions',attachments:'Attachments',
- timer:'Timer started at',
+ severity:'Severity',request:'Related request',task:'Primary related task',relatedTasks:'Additional related tasks',description:'Incident summary',filePath:'File path',steps:'Steps & operators',rootCause:'Root cause',corrective:'Corrective actions',preventive:'Preventive actions',attachments:'Attachments',
+ timer:'Timer started at',assignedTo:'Assigned to',reviewedBy:'Reviewed by',operator:'Linked operator',team:'Team',acknowledgments:'Signed acknowledgment',
 };
 const dateFields = ['due','forecast','scheduledStart','scheduledEnd','timer'];
 function trackedValue(key,value) {
+ if(key==='acknowledgments')return value?.map(entry=>entry.signature+' · revision '+entry.revision)??[];
  return key==='attachments' ? value?.map(file=>file.name) : value==='' ? null : value??null;
 }
 
 export function withActivity(before, next, actor, timestamp, action) {
  if(next===before) return before;
  const entries = [];
+ const authored={...next};
  for(const [collection, fields] of Object.entries(trackedFields)) {
   if(next[collection]===before[collection]) continue;
+  const touched=new Set();
   const previous = new Map(before[collection].map(record=>[record.id,record]));
   for(const record of next[collection]) {
    const old=previous.get(record.id);
@@ -88,18 +91,20 @@ export function withActivity(before, next, actor, timestamp, action) {
     }
    }
    if(!changes.length) continue;
+   touched.add(record.id);
    const requestIds=collection==='requests'?[record.id]:[...new Set([record.request,old?.request].filter(Boolean))];
    const taskIds=collection==='tasks'
     ? [...new Set([record.id,record.parentTask,old?.parentTask].filter(Boolean))]
-    : [...new Set([record.task,old?.task].filter(Boolean))];
+    : [...new Set([record.task,old?.task,...(record.relatedTasks??[]),...(old?.relatedTasks??[])].filter(Boolean))];
    const unlocked=collection==='tasks'&&old?.status==='Waiting'&&record.status==='Ready'&&
     blockedTask(old,before.tasks,before.statuses)&&!blockedTask(record,next.tasks,next.statuses);
    entries.push({actor,timestamp,action:collection==='tasks'&&next.tasks.some(task=>task.parentTask===record.id)?'Updated parent rollup':unlocked?'Dependency unlocked':action,requestIds,taskIds,
     recordId:record.id,recordName:record.parentTask?'Subtask':recordNames[collection],
     label:record.title??record.file??record.name,changes});
   }
+  if(touched.size)authored[collection]=next[collection].map(record=>touched.has(record.id)?{...record,modifiedBy:actor}:record);
  }
- return entries.length?{...next,activity:[...entries.reverse(),...before.activity]}:next;
+ return entries.length?{...authored,activity:[...entries.reverse(),...before.activity]}:next;
 }
 
 function activityValue(key,value,date) {

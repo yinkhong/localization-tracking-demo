@@ -5,6 +5,7 @@ import {audit, bootstrapTimeline, groups, Metadata, patchRecord, ResourceTimelin
 import {ActivityLog, bootstrapWorkflow, demoProfiles, FileWorkflows, InlineDue, TaskSelect, TaskStatus, withActivity} from './workflow';
 import {blockedTask, bootstrapStatuses, dependencyIds, parentTaskIds, resolveTasks, StatusAdmin, StatusPicker, statusGroup} from './status';
 import {DefectForm, RcaBody} from './rca';
+import {Acknowledgment, bootstrapDefects, defectAttribution, defectChanges, DefectPerformance, defectSeverities, defectStatuses, canEditDefect, RcaTimeline, ReviewSelect, reviewRoles} from './defect-review';
 import './style.css';
 
 const sections=[['Overview','◫'],['Requests','▤'],['Planning','▦'],['My work','✓'],['Defects','◇']];
@@ -15,9 +16,9 @@ const dataKey='localization-workspace-v1';
 function load(){
  try{
   const value=JSON.parse(localStorage.getItem(dataKey));
-  if(value?.requests&&value?.tasks&&value?.defects)return bootstrapStatuses(bootstrapWorkflow(bootstrapTimeline(value,false)));
+  if(value?.requests&&value?.tasks&&value?.defects)return bootstrapDefects(bootstrapStatuses(bootstrapWorkflow(bootstrapTimeline(value,false))));
  }catch{}
- return bootstrapStatuses(bootstrapWorkflow(bootstrapTimeline({requests:demoRequests,tasks:demoTasks,defects:demoDefects,zone:'Pacific',active:null},true)));
+ return bootstrapDefects(bootstrapStatuses(bootstrapWorkflow(bootstrapTimeline({requests:demoRequests,tasks:demoTasks,defects:demoDefects,zone:'Pacific',active:null},true))));
 }
 function App(){
  const [state,setState]=useState(load),[view,setView]=useState(()=>state.profiles[state.profile].role==='Operator'?'My work':'Overview'),[record,setRecord]=useState(''),[query,setQuery]=useState(''),[filter,setFilter]=useState('All'),[dialog,setDialog]=useState(null),[notice,setNotice]=useState(''),[now,setNow]=useState(Date.now()),[mode,setMode]=useState('Table'),[projectTab,setProjectTab]=useState('Tasks');
@@ -30,6 +31,8 @@ function App(){
  const statusName=id=>statuses.find(status=>status.id===id)?.label??id;
  const phase=id=>statusGroup(statuses,id);
  const statusBadge=id=><span className={'badge '+({'To-do':'amber','In progress':'blue','Complete':'green'}[phase(id)]??'gray')} title={phase(id)}><i/>{statusName(id)}</span>;
+ const canReview=reviewRoles.includes(role);
+ const reviewers=Object.keys(profiles).filter(name=>reviewRoles.includes(profiles[name].role));
  const canSeeActivity=Boolean(activityAccess[role]);
  const canManage = role !== 'Operator';
  const canSeeResources = Boolean(timelineAccess[role]);
@@ -47,6 +50,8 @@ function App(){
  const requestOf=id=>requests.find(r=>r.id===id);
  const taskOf=id=>tasks.find(t=>t.id===id);
  const req=requestOf(record), task=taskOf(record), defect=defects.find(d=>d.id===record);
+ const defectEntries=defect?activity.filter(entry=>entry.recordId===defect.id&&entry.recordName==='Defect'):[];
+ const defectLocked=defect?.status==='Closed';
  const requestTasks=req?tasks.filter(t=>t.request===req.id):[];
  const requestFiles=req?workflowFiles.filter(f=>f.request===req.id):[];
  const activeTask=active&&taskOf(active.id);
@@ -80,13 +85,28 @@ function App(){
    return withActivity(s,next,profile,timestamp,action);
   });
  }
+ function updateDefect(id,fields,action='edit',label='Updated defect report'){
+  commit(label,(s,timestamp)=>{
+   const current=s.defects.find(item=>item.id===id);
+   if(!current)return s;
+   const changes=defectChanges(current,fields,{profile,role,profiles:s.profiles,requests:s.requests,tasks:s.tasks,timestamp},action);
+   if(!changes||!Object.keys(changes).length)return s;
+   return {...s,defects:s.defects.map(item=>item===current?patchRecord(item,changes,timestamp,'assignedTo'):item)};
+  });
+ }
  function saveDefect(values){
   const existing=dialog.existing;
   const id=existing?.id||'DF-'+String(Math.max(87,...defects.map(d=>Number(d.id.split('-')[1])))+1).padStart(4,'0');
-  commit(existing?'Updated defect report':'Created defect report',(s,timestamp)=>({...s,
-   defects:existing?s.defects.map(d=>d.id===id?patchRecord(d,values,timestamp):d):[{...values,id,...audit(timestamp,profile)},...s.defects],
-  }));
-  setDialog(null);navigate('Defect',id);setNotice('RCA report saved');
+  if(existing){
+   if(!canEditDefect(existing,profile,role))return;
+   updateDefect(id,values,'edit',values.status!==existing.status&&values.status==='Closed'?'Closed defect report':'Updated defect report');
+  }else{
+   commit('Created defect report',(s,timestamp)=>({...s,defects:[{
+    ...values,id,revision:1,acknowledgments:[],...defectAttribution(values.request,values.task,s.requests,s.tasks),
+    ...audit(timestamp,profile,Boolean(values.assignedTo)),
+   },...s.defects]}));
+  }
+  navigate('Defect',id);setNotice('RCA report saved');
  }
  function changeProfilePreference(update){
   setState(s=>({...s,profiles:{...s.profiles,[profile]:{...s.profiles[profile],...update}}}));
@@ -104,7 +124,9 @@ function App(){
       (phase(task.status)==='Complete'&&phase(fields.status)!=='Complete')))return s;
    if(Object.entries(fields).every(([key,value])=>(task[key]??null)===(value??null)))return s;
    const updated=s.tasks.map(item=>item.id===id?patchRecord(item,fields,timestamp,'person'):item);
-   return {...s,tasks:updated};
+   const attributed=fields.person?s.defects.map(report=>report.task===id&&!report.operator&&report.status!=='Closed'?
+    patchRecord(report,defectAttribution(report.request,id,s.requests,updated),timestamp):report):s.defects;
+   return {...s,tasks:updated,defects:attributed};
   });
  }
  function start(task){
@@ -179,7 +201,7 @@ function App(){
  {dialog?.kind==='defect'?<>
   <div className="heading"><div><h1>{dialog.existing?'Edit RCA report':'New RCA report'}</h1></div></div>
   <DefectForm key={dialog.existing?.id||'new'} requests={requests} tasks={tasks} config={dialog}
-   save={saveDefect} cancel={()=>setDialog(null)}/>
+   save={saveDefect} {...{reviewers,canReview}} cancel={()=>setDialog(null)}/>
  </>:<>
  {['Request','Task','Defect'].includes(view)&&<button className="link back" onClick={()=>navigate(view==='Request'?'Requests':view==='Task'?(task?.parentTask?'Task':role==='Operator'?'My work':'Request'):'Defects',task?.parentTask||task?.request)}>‹ Back</button>}
  <div className="heading"><div><h1>{heading?.[0]}</h1><p>{heading?.[1]}</p></div>{(['Overview','Requests'].includes(view)&&role!=='Operator')&&<button className="primary" onClick={()=>setDialog({kind:'request'})}>＋ New request</button>}{view==='Defects'&&<button className="primary" onClick={()=>setDialog({kind:'defect'})}>＋ New report</button>}</div>
@@ -189,6 +211,7 @@ function App(){
  <div className="overview-grid"><section className="panel chart"><div className="panel-header"><div><h2>Quality trend</h2><p>Confirmed defects per 100 inspected pages</p></div><span className="subtle">Last 4 weeks</span></div><div className="bars" aria-label="Example quality trend: 1.2, 0.9, 0.7, 0.6"><div className="chart-grid"/>{[1.2,.9,.7,.6].map((v,i)=><div className="bar-column" key={i}><div style={{height:(v/1.2)*86+'%'}} className="chart-bar"><span>{v.toFixed(1)}</span></div><small>Week {i+1}</small></div>)}</div></section>
  <section className="panel attention"><div className="panel-header"><div><h2>Needs attention</h2><p>Delivery risks and next actions</p></div></div>{riskSummary.map(r=><div className="attention-item" key={r.id}><div><button className="link record" onClick={()=>navigate('Request',r.id)}>{r.title}</button><small>{r.id} · Due {date(r.due)}</small></div>{badge('At risk')}</div>)}<div className="attention-item"><div><button className="link record" onClick={()=>navigate('Planning')}>Unassigned work</button><small>Review available operators</small></div>{badge('Ready')}</div><div className="attention-item"><div><button className="link record" onClick={()=>navigate('Defects')}>Defect review queue</button><small>Open related evidence and tasks</small></div>{badge('Under review')}</div></section></div>
  <section className="panel"><div className="panel-header"><h2>Recent requests</h2><button onClick={()=>navigate('Requests')}>View all requests</button></div>{requestTable(requests.slice(0,4))}</section></>}
+ {view==='Overview'&&role==='Manager'&&<DefectPerformance records={defects} profiles={profiles}/>}
  {view==='Requests'&&<section className="panel"><div className="panel-header filters">{searchInput('Search requests')}{selectFilter(['All','At risk','On track','Unscheduled'])}</div>{requestTable(requests.filter(r=>search(r.title,r.id,r.account)&&(filter==='All'||r.risk===filter)))}</section>}
  {view==='Request'&&req&&<><section className="panel summary"><div>{statusBadge(req.status)} {badge(req.risk)}{canManage&&<StatusPicker label="Request status" statuses={statuses} value={req.status}
   onChange={status=>commit('Changed request status',(s,timestamp)=>({...s,requests:s.requests.map(r=>r.id===req.id?patchRecord(r,{status},timestamp):r)}))}/>}</div><div><small>Project owner</small>{canManage?<select aria-label="Project owner" value={req.owner||''} onChange={e=>{
@@ -242,9 +265,47 @@ function App(){
  </details>}
  <SessionList task={task} active={timers} date={historyDate} clock={clock} now={now}/>
  {!task.parentTask&&<section className="panel"><div className="panel-header"><h2>Subtasks</h2>{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(workflowFiles.find(file=>file.id===task.fileId),task)}>Add subtask</button>}</div>{taskTable(tasks.filter(t=>t.parentTask===task.id))}</section>}
- <section className="panel"><div className="panel-header"><h2>Related defects</h2><button onClick={()=>setDialog({kind:'defect',request:task.request,task:task.id})}>New report</button></div>{defectTable(defects.filter(d=>d.task===task.id))}</section></>}
+ <section className="panel"><div className="panel-header"><h2>Related defects</h2><button onClick={()=>setDialog({kind:'defect',request:task.request,task:task.id})}>New report</button></div>{defectTable(defects.filter(d=>d.task===task.id||d.relatedTasks?.includes(task.id)))}</section></>}
  {view==='Defects'&&<section className="panel"><div className="panel-header filters">{searchInput('Search defect reports')}{selectFilter(['All','Open','Under review','Closed'])}</div>{defectTable(defects.filter(d=>search(d.id,d.title,d.request)&&(filter==='All'||d.status===filter)))}</section>}
- {view==='Defect'&&defect&&<><section className="panel details"><div className="panel-header"><div>{badge(defect.status)} {badge(defect.severity)}</div><button onClick={()=>setDialog({kind:'defect',existing:defect})}>Edit report</button></div><div className="properties"><div><small>Related request</small><button className="link" onClick={()=>navigate('Request',defect.request)}>{requestOf(defect.request)?.title||defect.request}</button></div>{defect.task&&<div><small>Related task</small><button className="link" onClick={()=>navigate('Task',defect.task)}>{taskOf(defect.task)?.file||defect.task}</button></div>}</div><RcaBody record={defect}/></section><Metadata record={defect} date={historyDate}/></>}
+ {view==='Defect'&&defect&&<>
+  <section className="panel rca-record">
+   <div className="panel-header"><div>{badge(defect.status)} {badge(defect.severity)} {defectLocked&&<span className="badge gray">Locked</span>}</div>
+    {defectLocked?role==='Manager'&&<button onClick={()=>updateDefect(defect.id,{},'reopen','Reopened defect report')}>Reopen report</button>:
+     canEditDefect(defect,profile,role)&&<button onClick={()=>setDialog({kind:'defect',existing:defect})}>Edit report</button>}</div>
+   <div className="properties">
+    <div><small>Assigned to</small><ReviewSelect label="Assigned to" values={[...new Set([...reviewers,defect.assignedTo].filter(Boolean))]}
+     value={defect.assignedTo} placeholder="Unassigned" disabled={defectLocked||!canReview}
+     onChange={assignedTo=>updateDefect(defect.id,{assignedTo},'edit','Changed RCA assignee')}/></div>
+    <div><small>Reviewed by</small><ReviewSelect label="Reviewed by" values={[...new Set([...reviewers,defect.reviewedBy].filter(Boolean))]}
+     value={defect.reviewedBy} placeholder="Not reviewed" disabled={defectLocked||!canReview}
+     onChange={reviewedBy=>updateDefect(defect.id,{reviewedBy},'edit','Changed RCA reviewer')}/></div>
+    <div><small>Status</small><ReviewSelect label="RCA status" values={defectStatuses} value={defect.status} disabled={defectLocked||!canReview}
+     onChange={status=>updateDefect(defect.id,{status},'edit',status==='Closed'?'Closed defect report':'Changed RCA status')}/></div>
+    <div><small>Severity</small><ReviewSelect label="RCA severity" values={defectSeverities} value={defect.severity} disabled={defectLocked||!canReview}
+     onChange={severity=>updateDefect(defect.id,{severity},'edit','Changed RCA severity')}/></div>
+   </div>
+   <div className="properties rca-related">
+    <div><small>Related request</small><button className="link" onClick={()=>navigate('Request',defect.request)}>{requestOf(defect.request)?.title||defect.request}</button></div>
+    <div><small>Related tasks</small>{defect.task?<button className="link" onClick={()=>navigate('Task',defect.task)}>
+     {taskOf(defect.task)?.file||defect.task} · Primary</button>:<strong>—</strong>}
+     {defect.relatedTasks.map(id=><button className="link" key={id} onClick={()=>navigate('Task',id)}>
+      {taskOf(id)?.file||id} · {taskOf(id)?.type||id}</button>)}</div>
+    <div><small>Linked operator</small><strong>{defect.operator||'—'}</strong></div>
+    <div><small>Team</small><strong>{defect.team||'—'}</strong></div>
+    <div><small>Account</small><strong>{defect.account||'—'}</strong></div>
+   </div>
+  </section>
+  <div className="rca-layout">
+   <div>
+    <section className="panel"><RcaBody record={defect}/></section>
+    <Acknowledgment key={defect.id+':'+defect.revision+':'+profile} record={defect} profile={profile} date={historyDate}
+     sign={signature=>updateDefect(defect.id,{signature},'sign','Operator signed acknowledgment')}/>
+    <Metadata record={{...defect,modifiedBy:defect.modifiedBy??defectEntries[0]?.actor}} date={historyDate}/>
+    {canSeeActivity&&<ActivityLog key={defect.id} entries={defectEntries} date={historyDate}/>}
+   </div>
+   <RcaTimeline record={defect} entries={defectEntries} date={historyDate}/>
+  </div>
+ </>}
  </>}</main><footer>Production Workspace <span>Prototype · Changes stay in this browser</span></footer>
  </div>
  {notice&&<div className="toast" role="status">{notice}</div>}

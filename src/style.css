@@ -104,3 +104,36 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .insert-image { cursor:pointer; border:1px solid var(--line); background:#fff; border-radius:8px; padding:.44rem .65rem; font-size:.85rem; font-weight:650; }
 .insert-image input { position:absolute; width:1px; height:1px; opacity:0; }
 .insert-image:focus-within { outline:2px solid var(--accent); }
+
+.rca-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(235px,305px); align-items:start; gap:17px; }
+.rca-layout>div { min-width:0; }
+.rca-record .properties { border-bottom:0; align-items:start; }
+.rca-record .properties small,.reported-operator small { margin-bottom:5px; }
+.rca-record .properties select { width:100%; }
+.rca-related .link { padding-block:4px; }
+.rca-timeline { position:sticky; top:14px; }
+.rca-progress,.rca-events { list-style:none; margin:0; padding:0 15px 15px; }
+.rca-progress { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
+.rca-progress li { border-top:3px solid var(--line); padding-top:6px; text-align:center; font-size:.72rem; color:var(--muted); }
+.rca-progress li.reached { border-color:var(--accent); color:#41378d; }
+.rca-progress li[aria-current] { font-weight:750; }
+.rca-events li { position:relative; margin-left:6px; border-left:2px solid #e6e4fa; padding:0 0 15px 14px; font-size:.84rem; }
+.rca-events li::before { content:''; position:absolute; width:8px; height:8px; border-radius:50%; left:-5px; top:5px; background:#958db8; }
+.rca-events li.status::before { background:var(--accent); }
+.rca-events li.step::before { background:#457873; }
+.rca-events small,.rca-events p { margin-top:3px; font-size:.76rem; }
+.review-padding { padding:0 17px 17px; }
+.acknowledgment form { display:grid; justify-items:start; gap:8px; padding-top:10px; }
+.acknowledgment form label:first-child { display:grid; gap:4px; }
+.signature-consent { display:flex; align-items:center; gap:6px; }
+.acknowledgment details { margin-top:10px; font-size:.87rem; }
+.defect-performance .panel-header { flex-wrap:wrap; }
+.defect-performance tbody th { background:inherit; }
+.defect-bar-cell>span:first-child { display:inline-block; width:1.6rem; }
+.defect-bar { display:inline-block; width:min(12vw,120px); height:8px; background:#ece9fa; border-radius:8px; overflow:hidden; }
+.defect-bar i { display:block; height:100%; background:var(--accent); }
+@media(max-width:970px) { .rca-layout { grid-template-columns:1fr; } .rca-timeline { position:static; grid-row:1; } }
+.rca-related .link { display:block; }
+.rca-extra-links { margin-top:14px; color:#27324f; }
+.rca-extra-links summary { cursor:pointer; font-weight:650; font-size:.87rem; }
+.rca-extra-links label { display:flex; align-items:center; gap:7px; margin-top:5px; font-size:.83rem; }

@@ -1,4 +1,5 @@
 import React, {useRef,useState} from 'react';
+import {defectAttribution, defectSeverities, defectStatuses} from './defect-review';
 
 export const rcaSections = [
  ['description','Incident summary'],
@@ -84,12 +85,15 @@ function readImage(file){
  });
 }
 
-export function DefectForm({requests,tasks,config,save,cancel}) {
+export function DefectForm({requests,tasks,config,save,cancel,reviewers,canReview}) {
  const initial=config.existing;
  const [request,setRequest]=useState(initial?.request||config.request||requests[0]?.id||'');
  const [task,setTask]=useState(initial?.task||config.task||'');
+ const [relatedTasks,setRelatedTasks]=useState(initial?.relatedTasks??[]);
  const [error,setError]=useState('');
  const [pending,setPending]=useState(false);
+ const linked=request===initial?.request&&task===initial?.task?initial:defectAttribution(request,task,requests,tasks);
+ const reviewerOptions=current=>[...new Set(['',...reviewers,current||''])];
  const editors=useRef({});
  const selections=useRef({});
  const [original]=useState(()=>Object.fromEntries(rcaSections.map(([key])=>[key,rcaMarkup(initial,key)])));
@@ -143,19 +147,35 @@ export function DefectForm({requests,tasks,config,save,cancel}) {
   if(!fields.get('title').trim()||(!editors.current.description.textContent.trim()&&!editors.current.description.querySelector('img'))){
    setError('Enter a title and an incident summary or image.');return;
   }
-  save({...content,title:fields.get('title').trim(),filePath:fields.get('filePath').trim(),request,task,
-   severity:fields.get('severity'),status:fields.get('status'),attachments:(initial?.attachments??[]).filter(item=>!legacyImage(item))});
+  save({...content,title:fields.get('title').trim(),filePath:fields.get('filePath').trim(),request,task,relatedTasks:relatedTasks.filter(id=>id!==task),
+   severity:fields.get('severity')??initial?.severity??'Major',status:fields.get('status')??initial?.status??'Open',
+   assignedTo:fields.get('assignedTo')??initial?.assignedTo??'',reviewedBy:fields.get('reviewedBy')??initial?.reviewedBy??'',attachments:(initial?.attachments??[]).filter(item=>!legacyImage(item))});
  }}>
   <div className="form-grid">
    <label>Incident title<input name="title" defaultValue={initial?.title} required maxLength="120"/></label>
    <label>File path<input name="filePath" defaultValue={initial?.filePath} maxLength="400"/></label>
-   <label>Related request<select value={request} required onChange={e=>{setRequest(e.target.value);setTask('');}}>
+   <label>Related request<select value={request} required onChange={e=>{setRequest(e.target.value);setTask('');setRelatedTasks([]);}}>
     {requests.map(r=><option key={r.id} value={r.id}>{r.id} · {r.title}</option>)}</select></label>
-   <label>Related task<select value={task} onChange={e=>setTask(e.target.value)}><option value="">Request only</option>
+   <label>Primary related task<select value={task} onChange={e=>{
+    setTask(e.target.value);setRelatedTasks(ids=>ids.filter(id=>id!==e.target.value));
+   }}><option value="">Request only</option>
     {tasks.filter(t=>t.request===request).map(t=><option key={t.id} value={t.id}>{t.file} · {t.type}</option>)}</select></label>
-   <label>Severity<select name="severity" defaultValue={initial?.severity||'Major'}>{['Minor','Major','Critical'].map(item=><option key={item}>{item}</option>)}</select></label>
-   <label>Status<select name="status" defaultValue={initial?.status||'Open'}>{['Open','Under review','Closed'].map(item=><option key={item}>{item}</option>)}</select></label>
+   <div className="reported-operator"><small>Linked operator</small><strong>{linked?.operator||'—'}</strong></div>
+   <div className="reported-operator"><small>Team / account</small><strong>{linked?.team||'—'} / {linked?.account||'—'}</strong></div>
+   <label>Assigned to<select name="assignedTo" defaultValue={initial?.assignedTo||''} disabled={!canReview}>
+    {reviewerOptions(initial?.assignedTo).map(person=><option key={person} value={person}>{person||'Unassigned'}</option>)}</select></label>
+   <label>Reviewed by<select name="reviewedBy" defaultValue={initial?.reviewedBy||''} disabled={!canReview}>
+    {reviewerOptions(initial?.reviewedBy).map(person=><option key={person} value={person}>{person||'Not reviewed'}</option>)}</select></label>
+   <label>Severity<select name="severity" disabled={Boolean(initial)&&!canReview} defaultValue={initial?.severity||'Major'}>{defectSeverities.map(item=><option key={item}>{item}</option>)}</select></label>
+   <label>Status<select name="status" disabled={!canReview} defaultValue={initial?.status||'Open'}>{defectStatuses.map(item=><option key={item}>{item}</option>)}</select></label>
   </div>
+  {tasks.some(item=>item.request===request&&item.id!==task)&&<details className="rca-extra-links" open={relatedTasks.length>0}>
+   <summary>Additional related tasks ({relatedTasks.length})</summary>
+   <div>{tasks.filter(item=>item.request===request&&item.id!==task).map(item=><label key={item.id}>
+    <input type="checkbox" checked={relatedTasks.includes(item.id)} onChange={e=>setRelatedTasks(ids=>
+     e.target.checked?[...ids,item.id]:ids.filter(id=>id!==item.id))}/>{item.file} · {item.type} · {item.id}
+   </label>)}</div>
+  </details>}
   {rcaSections.map(([key,label])=><section key={key}><h2>{label}</h2>
    <div className="editor">
     <div className="editor-tools">{[['Bold','bold'],['Italic','italic'],['List','insertUnorderedList']].map(([name,command])=>

@@ -13,7 +13,7 @@ export const groups = [
 ];
 
 export function audit(timestamp, creator, assigned = false) {
- return {createdAt:timestamp, createdBy:creator, assignedAt:assigned ? timestamp : null, modifiedAt:timestamp};
+ return {createdAt:timestamp, createdBy:creator, assignedAt:assigned ? timestamp : null, modifiedAt:timestamp,modifiedBy:creator};
 }
 export function patchRecord(record, fields, timestamp, assigneeField) {
  const updated = {...record, ...fields, modifiedAt:timestamp};
@@ -56,6 +56,7 @@ export function Metadata({record, date}) {
    <div><dt>Created by</dt><dd>{record.createdBy || '—'}</dd></div>
    <div><dt>Assigned</dt><dd>{date(record.assignedAt)}</dd></div>
    <div><dt>Last modified</dt><dd>{date(record.modifiedAt)}</dd></div>
+   <div><dt>Last modified by</dt><dd>{record.modifiedBy || '—'}</dd></div>
   </dl></section>;
 }
 
