@@ -75,7 +75,7 @@ export function defectChanges(record,fields,context,action){
 }
 
 export function ReviewSelect({label,values,value,onChange,disabled=false,placeholder}){
- return <select aria-label={label} value={value??''} disabled={disabled} onChange={onChange}>
+ return <select aria-label={label} value={value??''} disabled={disabled} onChange={event=>onChange(event.target.value)}>
   {placeholder&&<option value="">{placeholder}</option>}
   {values.map(item=><option key={item}>{item}</option>)}
  </select>;
@@ -151,9 +151,9 @@ export function DefectPerformance({records,profiles}){
   <div className="panel-header"><div><h2>RCA performance reporting</h2>
    <p>Reported defect counts by linked operator, team, or account.</p></div>
    <div className="timeline-controls">
-    <label>Group by<ReviewSelect label="Group RCA reports by" values={['Operator','Team','Account']} value={dimension} onChange={e=>setDimension(e.target.value)}/></label>
-    <label>Team<ReviewSelect label="Filter RCA by team" values={['All teams',...teams]} value={team} onChange={e=>setTeam(e.target.value)}/></label>
-    <label>Account<ReviewSelect label="Filter RCA by account" values={['All accounts',...accounts]} value={account} onChange={e=>setAccount(e.target.value)}/></label>
+    <label>Group by<ReviewSelect label="Group RCA reports by" values={['Operator','Team','Account']} value={dimension} onChange={setDimension}/></label>
+    <label>Team<ReviewSelect label="Filter RCA by team" values={['All teams',...teams]} value={team} onChange={setTeam}/></label>
+    <label>Account<ReviewSelect label="Filter RCA by account" values={['All accounts',...accounts]} value={account} onChange={setAccount}/></label>
    </div></div>
   {counts.size>0?<div className="table-wrap"><table><thead><tr><th>{dimension}</th><th>Reports</th><th>Open</th><th>Critical</th><th>Acknowledged</th></tr></thead>
    <tbody>{[...counts.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([name,values])=><tr key={name}><th scope="row">{name}</th>
