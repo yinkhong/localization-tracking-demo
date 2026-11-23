@@ -85,7 +85,7 @@ function readImage(file){
  });
 }
 
-export function DefectForm({requests,tasks,config,save,cancel,reviewers,canReview}) {
+export function DefectForm({requests,tasks,config,save,cancel,reviewers,canReview,typeLabel=id=>id}) {
  const initial=config.existing;
  const [request,setRequest]=useState(initial?.request||config.request||requests[0]?.id||'');
  const [task,setTask]=useState(initial?.task||config.task||'');
@@ -159,7 +159,7 @@ export function DefectForm({requests,tasks,config,save,cancel,reviewers,canRevie
    <label>Primary related task<select value={task} onChange={e=>{
     setTask(e.target.value);setRelatedTasks(ids=>ids.filter(id=>id!==e.target.value));
    }}><option value="">Request only</option>
-    {tasks.filter(t=>t.request===request).map(t=><option key={t.id} value={t.id}>{t.file} · {t.type}</option>)}</select></label>
+    {tasks.filter(t=>t.request===request).map(t=><option key={t.id} value={t.id}>{t.file} · {typeLabel(t.type)}</option>)}</select></label>
    <div className="reported-operator"><small>Linked operator</small><strong>{linked?.operator||'—'}</strong></div>
    <div className="reported-operator"><small>Team / account</small><strong>{linked?.team||'—'} / {linked?.account||'—'}</strong></div>
    <label>Assigned to<select name="assignedTo" defaultValue={initial?.assignedTo||''} disabled={!canReview}>
@@ -173,7 +173,7 @@ export function DefectForm({requests,tasks,config,save,cancel,reviewers,canRevie
    <summary>Additional related tasks ({relatedTasks.length})</summary>
    <div>{tasks.filter(item=>item.request===request&&item.id!==task).map(item=><label key={item.id}>
     <input type="checkbox" checked={relatedTasks.includes(item.id)} onChange={e=>setRelatedTasks(ids=>
-     e.target.checked?[...ids,item.id]:ids.filter(id=>id!==item.id))}/>{item.file} · {item.type} · {item.id}
+     e.target.checked?[...ids,item.id]:ids.filter(id=>id!==item.id))}/>{item.file} · {typeLabel(item.type)} · {item.id}
    </label>)}</div>
   </details>}
   {rcaSections.map(([key,label])=><section key={key}><h2>{label}</h2>

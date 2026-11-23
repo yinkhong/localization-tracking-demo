@@ -178,3 +178,21 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .task-relationships fieldset {margin:12px 0; border:1px solid var(--line);border-radius:8px}
 .relationship-options {display:flex; flex-wrap:wrap; gap:6px 15px}
 .relationship-options label {display:flex; gap:5px; font-size:.83rem; align-items:center}
+
+.catalog-forms {display:grid; grid-template-columns:repeat(auto-fit,minmax(245px,1fr)); gap:9px; padding:0 16px 16px}
+.catalog-forms form {display:flex; gap:6px}
+.catalog-forms input {flex:1; min-width:0}
+.drag-handle {font-size:.95rem; line-height:1; padding:3px 5px; margin-inline-end:5px; cursor:grab; color:#62677c; border-color:#dedfec; background:#fafaff}
+.drag-handle:active {cursor:grabbing}
+.workflow-table tr.drag-target td {background:#f0edfc}
+.report-filters {display:grid; grid-template-columns:repeat(auto-fit,minmax(134px,1fr)); gap:10px; padding:0 16px 14px}
+.report-filters label {display:grid; gap:4px; font-size:.82rem; font-weight:650}
+.report-filters select,.report-filters input {width:100%; min-width:0}
+.report-summary {display:flex; flex-wrap:wrap; align-items:center; gap:22px; border-block:1px solid var(--line); padding:12px 16px}
+.report-summary>div>strong {display:block; font-size:1.26rem}
+.report-phase-chart {display:grid; min-width:220px; gap:4px}
+.report-phase-chart div {display:grid; grid-template-columns:78px minmax(80px,1fr) 24px; gap:7px; align-items:center; font-size:.78rem}
+.report-phase-chart meter {width:100%; accent-color:#635ac5}
+.report-dashboard th button {background:transparent; border:none; font-size:inherit; padding:0; text-align:left}
+.report-dashboard .tabs {display:flex; gap:5px}
+.report-dashboard .tabs button[aria-pressed=true] {background:#edebfb; color:#453997; border-color:#d3cdef}

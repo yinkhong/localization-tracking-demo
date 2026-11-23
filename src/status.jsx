@@ -30,7 +30,7 @@ function labelColor(status){
  return statusColor(status.group);
 }
 
-export function StatusPicker({statuses,value,onChange,label,disabled=false,onEdit}) {
+export function StatusPicker({statuses,value,onChange,label,disabled=false,onEdit,editLabel='Edit status labels', groupOrder=groups, color=labelColor, placeholder=''}) {
  const [position,setPosition]=useState(null);
  const trigger=useRef(null), menu=useRef(null);
  const id=useId();
@@ -60,9 +60,9 @@ export function StatusPicker({statuses,value,onChange,label,disabled=false,onEdi
    maxHeight:Math.max(80,(upward?above:below)-12),
    ...(upward?{bottom:window.innerHeight-rect.top+5}:{top:rect.bottom+5})});
  }
- const pill=status=><span className={'badge '+labelColor(status)}><i/>{status?.label??value}</span>;
+ const pill=status=><span className={'badge '+color(status)}><i/>{status?.label??(value||placeholder)}</span>;
  return <>
-  <button ref={trigger} type="button" className="status-trigger" aria-label={label+': '+(current?.label??value)}
+  <button ref={trigger} type="button" className="status-trigger" aria-label={label+': '+(current?.label??(value||placeholder))}
    aria-haspopup="menu" aria-controls={position?id:undefined} aria-expanded={Boolean(position)} disabled={disabled}
    onClick={toggle} onKeyDown={event=>{if(event.key==='ArrowDown'){event.preventDefault();toggle();}}}>
    {pill(current)}<span className="select-chevron" aria-hidden="true"/>
@@ -79,17 +79,17 @@ export function StatusPicker({statuses,value,onChange,label,disabled=false,onEdi
      (index+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;
     options[next]?.focus();
    }}>
-   {groups.map(group=>[group,statuses.filter(status=>status.group===group)]).filter(([,items])=>items.length).map(([group,items])=>
+   {groupOrder.map(group=>[group,statuses.filter(status=>status.group===group)]).filter(([,items])=>items.length).map(([group,items])=>
     <div className="status-menu-group" role="group" aria-label={group} key={group}><div className="status-group-title">{group}</div>
      {items.map(status=><button type="button" role="menuitemradio" aria-checked={value===status.id} key={status.id}
       onClick={()=>{close(true);onChange(status.id);}}>{pill(status)}</button>)}
     </div>)}
-   {onEdit&&<button type="button" role="menuitem" onClick={()=>{close();onEdit();}}>Edit status labels</button>}
+   {onEdit&&<button type="button" role="menuitem" onClick={()=>{close();onEdit();}} >{editLabel}</button>}
   </div>,document.body)}
  </>;
 }
 
-export function StatusAdmin({statuses,save}) {
+export function StatusAdmin({statuses,save,title,id}) {
  const [error,setError]=useState('');
  function update(event,id,group){
   event.preventDefault();
@@ -102,8 +102,7 @@ export function StatusAdmin({statuses,save}) {
   if(!id)field.value='';
   setError('');
  }
- return <section className="panel"><div className="panel-header"><div><h2>Status labels</h2>
-  <p>Labels are shared by requests, tasks, and subtasks. Rename a label to update it everywhere.</p></div></div>
+ return <section className="panel" id={id}><div className="panel-header"><h2>{title}</h2></div>
   {error&&<p className="note error" role="alert">{error}</p>}
   <div className="status-settings">{groups.map(group=><section key={group}><h3>{group}</h3>
    {statuses.filter(status=>status.group===group).map(status=><form key={status.id+status.label} onSubmit={e=>update(e,status.id,group)}>
@@ -147,10 +146,11 @@ export function dependencyError(task,tasks,statuses) {
   ' before advancing '+task.type+' ('+task.id+').':'';
 }
 
-export function workflowOrder(tasks) {
+export function workflowOrder(tasks, order=[]) {
  const preferred=[];
  const listed=new Set();
- const latestFirst=[...tasks].reverse();
+ const indices=new Map(order.map((id,index)=>[id,index]));
+ const latestFirst=[...tasks].reverse().sort((a,b)=>(indices.get(a.id)??Infinity)-(indices.get(b.id)??Infinity));
  function list(parent) {
   if(listed.has(parent.id))return;
   listed.add(parent.id);
@@ -204,6 +204,7 @@ export function resolveTasks(tasks,statuses,timestamp) {
 
 export function bootstrapStatuses(state) {
  const stored=state.statuses??initialStatuses;
+ const requestStatuses=state.requestStatuses??stored.filter(status=>!isDependencyStatus(status.id));
  const statuses=[...stored,...initialStatuses.filter(status=>!stored.some(item=>item.id===status.id))];
  const timestamp=Date.now();
  const parents=parentTaskIds(state.tasks);
@@ -219,5 +220,5 @@ export function bootstrapStatuses(state) {
    openedWith:running.openedWith??'Started',closedWith:'Paused',
   }]};
  });
- return {...state,statuses,activeTimers,tasks:resolveTasks(tasks,statuses,timestamp)};
+ return {...state,statuses,requestStatuses,activeTimers,tasks:resolveTasks(tasks,statuses,timestamp)};
 }

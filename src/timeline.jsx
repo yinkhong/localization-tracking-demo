@@ -111,7 +111,7 @@ function timelineItems(tasks, active, now, includePlan, statuses) {
  });
 }
 
-export function ResourceTimeline({tasks, active, now, zone, date, navigate, toInstant, person,statuses}) {
+export function ResourceTimeline({tasks, active, now, zone, date, navigate, toInstant, person,statuses,typeLabel=id=>id}) {
  const teams = [...new Set(groups.map(g => g.team))];
  const [team, setTeam] = useState('All teams');
  const [day, setDay] = useState(() => {
@@ -155,7 +155,7 @@ export function ResourceTimeline({tasks, active, now, zone, date, navigate, toIn
         const start=Math.max(dayStart,e.startedAt);
         const left=(start-dayStart)/dayLength*100;
         const width=(Math.min(dayEnd,e.end)-start)/dayLength*100;
-        const label=[e.task.type,e.task.file,e.label,date(e.startedAt),e.endedAt!==e.startedAt&&e.endedAt?date(e.endedAt):null].filter(Boolean).join(' · ');
+        const label=[typeLabel(e.task.type),e.task.file,e.label,date(e.startedAt),e.endedAt!==e.startedAt&&e.endedAt?date(e.endedAt):null].filter(Boolean).join(' · ');
         return <div className="resource-lane" key={e.task.id+'-'+index}>
          <button className={'timeline-block '+e.style} style={{left:Math.min(left,99)+'%',width:Math.max(1, width)+'%'}}
           title={label} aria-label={label} onClick={()=>navigate('Task',e.task.id)} />

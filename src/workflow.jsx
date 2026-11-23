@@ -1,7 +1,7 @@
 import {blockedTask, dependencyIds, incompletePredecessors, isDependencyStatus, parentTaskIds, StatusPicker, statusGroup, workflowOrder} from './status';
 import React, {useState} from 'react';
 import {zoneCode} from './time-zone';
-import {estimate, formatMinutes, types} from './data';
+import {estimate, formatMinutes} from './data';
 
 export const demoProfiles = {
  Alex:{role:'Manager',zone:'Pacific'},
@@ -68,9 +68,13 @@ export function withActivity(before, next, actor, timestamp, action) {
    const changes=fields.flatMap(key=>{
     const from=trackedValue(key,old?.[key]),to=trackedValue(key,record[key]);
     if(JSON.stringify(from)===JSON.stringify(to))return [];
+    if(key==='type'&&collection==='tasks'){
+     const name=(id,list)=>list?.find(type=>type.id===id)?.label??id;
+     return [{key,from:name(from,before.taskTypes),to:name(to,next.taskTypes)}];
+    }
     if(key==='status'&&collection!=='defects'){
      const name=(value,list)=>list?.find(status=>status.id===value)?.label??value;
-     return [{key,from:name(from,before.statuses),to:name(to,next.statuses)}];
+     return [{key,from:name(from,collection==='requests'?before.requestStatuses:before.statuses),to:name(to,collection==='requests'?next.requestStatuses:next.statuses)}];
     }
     if(['description','steps','rootCause','corrective','preventive'].includes(key)){
      const summary=markup=>{
@@ -179,25 +183,39 @@ export function InlineDue({task,zone,localValue,toInstant,save,showError}) {
   }} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/>;
 }
 
-export function TaskStatus({task,statuses,locked,blocked,save}) {
+export function TaskStatus({task,statuses,locked,blocked,save,onEdit}) {
  const choices=statuses.filter(status=>status.id===task.status||!isDependencyStatus(status.id)&&
   (!blocked||status.group!=='To-do'));
  return <StatusPicker label={'Status · '+task.id} statuses={choices} value={task.status}
-  disabled={locked} onChange={status=>save({status})}/>;
+  disabled={locked} onEdit={onEdit} editLabel="Edit task status labels" onChange={status=>save({status})}/>;
+}
+
+export function TaskTypePicker({value,taskTypes,onChange,onEdit,label='Task type',disabled}){
+ return <StatusPicker {...{value,label,onChange,onEdit,disabled}} placeholder="Select a task type"
+  editLabel="Edit task types" groupOrder={['Task types']} color={()=>'gray'}
+  statuses={taskTypes.map(item=>({...item,group:'Task types'}))}/>;
 }
 
 export function FileWorkflows({files,tasks,account,people,canManage,editable,locked,changeTask,openTask,
- addTask,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError}) {
+ addTask,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,editTaskStatuses,editTaskTypes,orders,moveTask}) {
+ const [drag,setDrag]=useState(null);
+ const [target,setTarget]=useState(null);
+ function drop(file,event,id){
+  event.preventDefault();
+  const rect=event.currentTarget.getBoundingClientRect();
+  if(drag?.file===file.id)moveTask(file.id,drag.id,id,event.clientY>=rect.top+rect.height/2);
+  setDrag(null);setTarget(null);
+ }
  if(!files.length)return <p className="empty">Add a file to create its workflow.</p>;
  return <div className="file-workflows">{files.map(file=>{
   const items=tasks.filter(task=>task.fileId===file.id);
   const parents=parentTaskIds(items);
   const leaves=items.filter(task=>!parents.has(task.id));
-  const rows=workflowOrder(items);
+  const rows=workflowOrder(items,orders[file.id]);
   const byId=new Map(tasks.map(task=>[task.id,task]));
   const linkedTask=id=>{
    const linked=byId.get(id);
-   return linked&&<button className="link" key={id} onClick={()=>openTask(id)}>{linked.type} · {id}</button>;
+   return linked&&<button className="link" key={id} onClick={()=>openTask(id)}>{typeLabel(linked.type)} · {id}</button>;
   };
   return <details className="file-workflow" key={file.id} open>
    <summary><strong>{file.name}</strong><span>{leaves.filter(task=>statusGroup(statuses,task.status)==='Complete').length} / {leaves.length} complete</span></summary>
@@ -217,9 +235,22 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      }
      const save=fields=>changeTask(task.id,fields);
      const effort=estimate(account,task.type,task.pages);
-     return <tr key={task.id} className={task.parentTask?'workflow-subtask':''}>
+     const siblings=rows.filter(row=>(row.parentTask||null)===(task.parentTask||null));
+     const index=siblings.indexOf(task);
+     return <tr key={task.id} className={(task.parentTask?'workflow-subtask ':'')+(target===task.id?'drag-target':'')}
+      onDragOver={event=>{if(drag?.file===file.id){event.preventDefault();setTarget(task.id);}}}
+      onDrop={event=>drop(file,event,task.id)}>
       <td><div className="workflow-operation" style={{marginInlineStart:Math.min(depth,5)*18}}>
-       <button className="link record" onClick={()=>openTask(task.id)}>{task.type} <span aria-hidden="true">↗</span></button>
+       {canManage&&siblings.length>1&&<button type="button" className="drag-handle" draggable title="Drag to reorder, or focus and use the Up and Down arrow keys."
+        aria-label={'Reorder '+task.id} onDragStart={event=>{
+         event.dataTransfer.setData('text/plain',task.id);event.dataTransfer.effectAllowed='move';setDrag({file:file.id,id:task.id});
+        }} onDragEnd={()=>{setDrag(null);setTarget(null);}} onKeyDown={event=>{
+         if(!['ArrowUp','ArrowDown'].includes(event.key))return;
+         const direction=event.key==='ArrowDown'?1:-1;
+         const other=siblings[index+direction];
+         if(other){event.preventDefault();moveTask(file.id,task.id,other.id,direction>0);}
+        }}>⠿</button>}
+       <button className="link record" onClick={()=>openTask(task.id)}>{typeLabel(task.type)} <span aria-hidden="true">↗</span></button>
        <small>{parent?'Parent task · ':''}{task.id}</small>
        {depth>0&&<small className="workflow-relation child-relation"><span>Subtask of</span>{linkedTask(task.parentTask)}</small>}
        {predecessors.length>0&&<small className={'workflow-relation dependency-relation '+(blocked?'workflow-blocked':'')}>
@@ -227,13 +258,13 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
        {parallel&&<small className="workflow-relation parallel-relation">Parallel · same prerequisites</small>}
        {!predecessors.length&&!parallel&&<small className="workflow-relation parallel-relation">No prerequisite</small>}
       </div></td>
-      <td>{canManage?<TaskSelect label={'Task type · '+task.id} value={task.type} options={types} disabled={locked(task.id)} save={type=>save({type})}/>:task.type}</td>
+      <td>{canManage?<TaskTypePicker label={'Task type · '+task.id} value={task.type} {...{taskTypes}} disabled={locked(task.id)} onEdit={editTaskTypes} onChange={type=>save({type})}/>:typeLabel(task.type)}</td>
       <td>{parent?<span className="parent-note">Subtasks only</span>:canManage?<TaskSelect label={'Operator · '+task.id} value={task.person||''} options={[[ '', 'Unassigned' ],...people]}
        disabled={locked(task.id)} save={person=>save({person})}/>:task.person||'Unassigned'}</td>
       <td>{editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>
       <td>{canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
       <td>{parent?'—':formatMinutes(effort.minutes)}{!parent&&effort.source==='Historical'&&<small>Historical</small>}</td>
-      <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save}/>:statusBadge(task.status)}</td>
+      <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save} onEdit={editTaskStatuses}/>:statusBadge(task.status)}</td>
       <td><div className="workflow-actions">{taskAction(task)}{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}</div></td>
      </tr>;
     })}</tbody>

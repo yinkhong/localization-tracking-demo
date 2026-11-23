@@ -57,13 +57,13 @@ export function updateRelationships(tasks,id,changes,statuses,timers,timestamp){
  return {tasks:resolved};
 }
 
-export function TaskRelationships({task,tasks,files,save}){
+export function TaskRelationships({task,tasks,files,save,typeLabel=id=>id}){
  const [fileId,setFileId]=useState(task.fileId);
  const [parent,setParent]=useState(task.parentTask||'');
  const [predecessor,setPredecessor]=useState(task.dependsOn||'');
  const [children,setChildren]=useState(tasks.filter(item=>item.parentTask===task.id).map(item=>item.id));
  const options=tasks.filter(item=>item.id!==task.id&&item.fileId===fileId);
- const name=item=>item.type+' · '+item.id;
+ const name=item=>typeLabel(item.type)+' · '+item.id;
  return <section className="panel task-relationships">
   <div className="panel-header"><h2>Workflow relationships</h2></div>
   <form onSubmit={event=>{
