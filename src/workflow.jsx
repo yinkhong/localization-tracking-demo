@@ -73,7 +73,9 @@ export function withActivity(before, next, actor, timestamp, action) {
    }
    if(!changes.length) continue;
    const requestIds=collection==='requests'?[record.id]:[...new Set([record.request,old?.request].filter(Boolean))];
-   const taskIds=collection==='tasks'?[record.id]:[...new Set([record.task,old?.task].filter(Boolean))];
+   const taskIds=collection==='tasks'
+    ? [...new Set([record.id,record.parentTask,old?.parentTask].filter(Boolean))]
+    : [...new Set([record.task,old?.task].filter(Boolean))];
    const unlocked=collection==='tasks'&&old?.status==='Waiting'&&record.status==='Ready'&&record.dependsOn&&
     before.tasks.some(task=>task.id===record.dependsOn&&task.status!=='Complete')&&
     next.tasks.some(task=>task.id===record.dependsOn&&task.status==='Complete');
