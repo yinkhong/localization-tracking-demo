@@ -1,3 +1,6 @@
+import {zones} from './data.js';
+import {dayAt,dayOffset} from './productivity-data.js';
+
 export const defaultCorrectionAccess={Manager:true,PM:false,'Team lead':false,Operator:false};
 const overlaps=(start,end,otherStart,otherEnd)=>start<otherEnd&&end>otherStart;
 const duration=session=>Math.max(0,Math.floor((session.endedAt-session.startedAt)/1000));
@@ -40,4 +43,17 @@ export function planBreak(plans,start,end,now){
   return 'Enter a future start time and an end time after it.';
  if(plans.some(item=>overlaps(start,end,item.start,item.end)))return 'That booking overlaps another planned break.';
  return '';
+}
+
+export function todayBreaks(logs,now,zone,toInstant){
+ const day=dayAt(now,zones[zone]);
+ const midnight=value=>Date.parse(toInstant(value+'T00:00',zone));
+ const from=midnight(day),through=midnight(dayOffset(day,1));
+ const entries=logs.flatMap(item=>{
+  const start=Math.max(item.start,from),end=Math.min(item.end,through);
+  if(start>=end)return [];
+  return [{...item,start,end}];
+ }).sort((a,b)=>b.start-a.start);
+ const seconds=Math.floor(entries.reduce((sum,item)=>sum+item.end-item.start,0)/1000);
+ return {entries,seconds};
 }

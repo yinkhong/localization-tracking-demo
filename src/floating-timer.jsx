@@ -1,90 +1,84 @@
-import React, {useEffect,useRef,useState} from 'react';
+import React, {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import styles from './floating-timer.css?raw';
 
-export function FloatingTimer({taskId,taskName,type,started,spent,clock,pause,complete}){
- const [mount,setMount]=useState(null);
- const [inPage,setInPage]=useState(false);
- const windowRef=useRef(null);
- const opening=useRef(false);
- const disposed=useRef(false);
- const trigger=useRef(null);
+export function useFloatingTimer(timer,clock){
+ const [surface,setSurface]=useState(null);
+ const request=useRef(null);
+ const key=timer?.key;
 
- useEffect(()=>{
-  disposed.current=false;
-  return ()=>{
-   disposed.current=true;
-   windowRef.current?.close();
-   windowRef.current=null;
-  };
- },[]);
-
- async function open(){
-  if(opening.current||windowRef.current||inPage)return;
-  const pictureInPicture=window.documentPictureInPicture;
-  if(!pictureInPicture){
-   setInPage(true);
-   return;
-  }
-  opening.current=true;
-  let popup;
-  try{
-   popup=await pictureInPicture.requestWindow({width:330,height:200});
-   if(disposed.current){popup.close();return;}
-   windowRef.current=popup;
-   const document=popup.document;
-   document.title='Task timer';
-   document.documentElement.lang='en';
-   document.body.className='work-timer-window';
-   const target=document.createElement('div');
-   document.body.append(target);
-   popup.addEventListener('pagehide',()=>{
-    if(windowRef.current!==popup)return;
-    windowRef.current=null;
-    if(!disposed.current)setMount(null);
-   },{once:true});
-   setMount(target);
-  }catch{
-   popup?.close();
-   if(!disposed.current)setInPage(true);
-  }finally{
-   opening.current=false;
-  }
+ function close(entry=request.current){
+  if(!entry||request.current!==entry)return;
+  request.current=null;
+  entry.popup?.close();
+  setSurface(null);
  }
+ useLayoutEffect(()=>{
+  if(request.current&&request.current.key!==key)close();
+ },[key]);
+ useEffect(()=>()=>{const entry=request.current;request.current=null;entry?.popup?.close();},[]);
 
- const dismiss=inPage?()=>{
-  setInPage(false);
-  requestAnimationFrame(()=>trigger.current?.focus());
- }:undefined;
-
- return <>
-  <button ref={trigger} type="button" onClick={open} disabled={Boolean(mount)||inPage}
-   aria-expanded={Boolean(mount)||inPage}>Float timer</button>
-  {mount&&createPortal(<TimerCard {...{taskId,taskName,type,started,spent,clock,pause,complete}} timerWindow={mount.ownerDocument.defaultView}/>,mount)}
-  {inPage&&<TimerCard {...{taskId,taskName,type,started,spent,clock,pause,complete,dismiss}} timerWindow={window}/>}
- </>;
+ // Call from the Start or Float button handler so the browser can use that click's activation.
+ async function open(key,title){
+  if(request.current?.key===key)return;
+  close();
+  const entry={key};
+  request.current=entry;
+  try{
+   const pictureInPicture=window.documentPictureInPicture;
+   if(pictureInPicture){
+    const popup=await pictureInPicture.requestWindow({width:330,height:200});
+    if(request.current!==entry){popup.close();return;}
+    entry.popup=popup;
+    const document=popup.document;
+    document.title=title;
+    document.documentElement.lang='en';
+    document.body.className='work-timer-window';
+    const mount=document.createElement('div');
+    document.body.append(mount);
+    popup.addEventListener('pagehide',()=>{
+     if(request.current!==entry)return;
+     request.current=null;
+     setSurface(null);
+    },{once:true});
+    setSurface({key,mount});
+    return;
+   }
+  }catch{
+   entry.popup?.close();
+   entry.popup=null;
+  }
+  if(request.current===entry)setSurface({key,mount:null});
+ }
+ const visible=Boolean(timer&&surface?.key===key);
+ const control=timer&&<button type="button" disabled={visible} aria-expanded={visible}
+  onClick={()=>open(key,timer.title)}>Float timer</button>;
+ const content=visible&&<TimerCard timer={timer} clock={clock} dismiss={surface.mount?undefined:()=>close()}
+  timerWindow={surface.mount?.ownerDocument.defaultView??window}/>;
+ return {open,control,card:content&&surface.mount?createPortal(content,surface.mount):content};
 }
 
-function TimerCard({taskId,taskName,type,started,spent,clock,pause,complete,dismiss,timerWindow}){
+function TimerCard({timer,clock,dismiss,timerWindow}){
  const [now,setNow]=useState(Date.now);
  useEffect(()=>{
-  const timer=timerWindow.setInterval(()=>setNow(Date.now()),250);
-  return ()=>timerWindow.clearInterval(timer);
+  const interval=timerWindow.setInterval(()=>setNow(Date.now()),250);
+  return ()=>timerWindow.clearInterval(interval);
  },[timerWindow]);
- const seconds=spent+Math.max(0,Math.floor((now-started)/1000));
- return <section className={'work-timer-card'+(dismiss?' work-timer-in-page':'')} aria-label="Floating task timer">
+ const seconds=timer.spent+Math.max(0,Math.floor((now-timer.started)/1000));
+ return <section className={'work-timer-card'+(dismiss?' work-timer-in-page':'')}
+  aria-label={'Floating '+timer.title.toLowerCase()}>
   <style>{styles}</style>
   <header className="work-timer-header">
-   <span>{dismiss?'Task timer · This tab':'Task timer'}</span>
+   <span>{timer.title}{dismiss&&' · This tab'}</span>
    {dismiss&&<button type="button" onClick={dismiss} className="work-timer-dismiss" aria-label="Hide floating timer">×</button>}
   </header>
-  <strong className="work-timer-task" title={taskName}>{taskName}</strong>
-  <div className="work-timer-meta">{type} · {taskId}</div>
+  <strong className="work-timer-task" title={timer.name}>{timer.name}</strong>
+  {timer.detail&&<div className="work-timer-meta">{timer.detail}</div>}
   <div className="work-timer-bottom">
-   <output aria-label="Elapsed task time" aria-live="off">{clock(seconds)}</output>
+   <output aria-label={timer.elapsedLabel} aria-live="off">{clock(seconds)}</output>
    <div className="work-timer-actions">
-    <button type="button" onClick={pause}>Pause</button>
-    <button type="button" className="work-timer-complete" onClick={complete}>Complete</button>
+    {timer.pause&&<button type="button" onClick={timer.pause}>Pause</button>}
+    <button type="button" className="work-timer-complete" onClick={timer.finish}>{timer.finishLabel}</button>
    </div>
   </div>
  </section>;

@@ -298,4 +298,19 @@ button.team-event:hover,button.team-event:focus-visible { outline:2px solid #172
 .break-section .panel-header { flex-wrap:wrap; gap:8px; }
 .break-section details { margin:0 16px 12px; }
 .break-section summary { cursor:pointer; font-weight:650; }
-.break-section .time-entry { padding:8px 0 0; }
+ .break-booking { margin:0 17px 14px; padding:14px; border:1px solid var(--line); border-radius:10px; background:#f8f9fd; }
+.break-booking-fields { display:grid; grid-template-columns:repeat(2,minmax(0,270px)); gap:12px; }
+.break-booking-fields label { display:grid; gap:5px; align-content:start; font-size:.84rem; font-weight:650; }
+.break-booking-fields .zoned-input { width:100%; }
+.break-booking-fields .zoned-input input { width:100%; min-width:0; }
+.break-booking-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.today-breaks { padding:12px 17px; border-top:1px solid var(--line); }
+.today-breaks-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+.today-breaks-heading h2 { margin:0; font-size:1rem; }
+.today-breaks-heading span,.today-breaks p { color:var(--muted); font-size:.8rem; }
+.today-breaks-heading strong { font-variant-numeric:tabular-nums; }
+.break-section .today-breaks details { margin:10px 0 0; }
+.today-breaks p { margin:8px 0 0; }
+.timer-preference { display:flex; align-items:start; gap:10px; padding:0 17px 14px; }
+.timer-preference small { display:block; margin-top:4px; }
+@media(max-width:650px) { .break-booking-fields { grid-template-columns:minmax(0,1fr); } }

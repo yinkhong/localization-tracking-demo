@@ -14,9 +14,9 @@ import {moveWorkflowTask} from './workflow-order';
 import {defaultTeamGroups,TeamOrg} from './team-org';
 import {Productivity,ShiftSettings} from './productivity';
 import {defaultShift,isCancelled} from './productivity-data';
-import {Breaks,CorrectTime} from './time-entry-ui';
-import {correctTaskTime,defaultCorrectionAccess,planBreak} from './time-entry';
-import {FloatingTimer} from './floating-timer';
+import {Breaks,CorrectTime,TodayBreaks} from './time-entry-ui';
+import {correctTaskTime,defaultCorrectionAccess,planBreak,todayBreaks} from './time-entry';
+import {useFloatingTimer} from './floating-timer';
 import './style.css';
 
 const sections=[['Overview','◫'],['Requests','▤'],['Planning','▦'],['My work','✓'],['Defects','◇'],['Reporting','▥'],['Productivity','▧'],['Teams','♧']];
@@ -35,7 +35,7 @@ function load(){
 function App(){
  const [state,setState]=useState(load),[view,setView]=useState(()=>state.profiles[state.profile].role==='Operator'?'My work':'Overview'),[record,setRecord]=useState(''),[query,setQuery]=useState(''),[filter,setFilter]=useState('All'),[dialog,setDialog]=useState(null),[notice,setNotice]=useState(''),[workflowError,setWorkflowError]=useState(''),[now,setNow]=useState(Date.now()),[mode,setMode]=useState('Table'),[projectTab,setProjectTab]=useState('Tasks'),[adminSection,setAdminSection]=useState('');
  const {requests,tasks:allTasks,defects,timelineAccess,activityAccess,activeTimers,profile,profiles,workflowFiles,activity,statuses,requestStatuses,taskTypes=defaultTaskTypes,workflowOrders={},teamGroups=defaultTeamGroups,accounts=defaultAccounts}=state;
- const {role,zone}=profiles[profile];
+ const {role,zone,autoFloatTaskTimer=true}=profiles[profile];
  const archivedFiles=new Set(workflowFiles.filter(file=>file.archivedAt).map(file=>file.id));
  const tasks=allTasks.filter(task=>!archivedFiles.has(task.fileId));
  const shifts=state.shifts??{}, timeOff=state.timeOff??{};
@@ -62,7 +62,7 @@ function App(){
  const accountLabel=id=>accounts.find(account=>account.id===id)?.label??id;
  useEffect(()=>{try{localStorage.setItem(dataKey,JSON.stringify(state));}catch{setNotice('Browser storage is full. These changes are available for this session.');}},[state]);
  useEffect(()=>{
-  if(view!=='Productivity'&&!Object.keys(activeTimers).length&&!anyBreak)return;
+  if(!['Productivity','Profile','My work'].includes(view)&&!Object.keys(activeTimers).length&&!anyBreak)return;
   setNow(Date.now());
   const id=setInterval(()=>setNow(Date.now()),Object.keys(activeTimers).length||anyBreak?1000:10000);
   return()=>clearInterval(id);
@@ -89,6 +89,17 @@ function App(){
  const removedFiles=req?workflowFiles.filter(f=>f.request===req.id&&f.archivedAt):[];
  const activeTask=active&&taskOf(active.id);
  const elapsed=activeTask?(activeTask.spent??0)+Math.max(0,Math.floor((now-active.started)/1000)):0;
+ const taskTimerKey=(id,started)=>'task:'+profile+':'+id+':'+started;
+ const breakTimerKey=id=>'break:'+profile+':'+id;
+ const floating=useFloatingTimer(activeTask?{
+  key:taskTimerKey(activeTask.id,active.started),title:'Task timer',name:activeTask.file,
+  detail:typeLabel(activeTask.type)+' · '+activeTask.id,started:active.started,spent:activeTask.spent??0,
+  elapsedLabel:'Elapsed task time',pause:()=>stop(),finish:()=>stop(true),finishLabel:'Complete',
+ }:activeBreak?{
+  key:breakTimerKey(activeBreak.id),title:'Break timer',name:'On break',started:activeBreak.start,spent:0,
+  elapsedLabel:'Elapsed break time',finish:endBreak,finishLabel:'End break',
+ }:null,clock);
+ const dailyBreaks=todayBreaks(breakLogs[profile]??[],now,zone,toInstant);
  const taskBlocked=(task,all=tasks)=>blockedTask(task,all,statuses);
  const stats=[['Open requests',requests.filter(r=>statusGroup(requestStatuses,r.status)!=='Complete').length,'Across all sample accounts','▤'],['At risk',requests.filter(r=>r.risk==='At risk').length,'Needs PM attention','!'],['Ready to assign',tasks.filter(t=>!parents.has(t.id)&&phase(t.status)==='To-do'&&!taskBlocked(t)&&!t.person).length,'Unassigned operations','＋'],['Defects in review',defects.filter(d=>d.status!=='Closed').length,'Awaiting a decision','◇']];
  const editable=t=>canManage||t?.person===profile;
@@ -240,7 +251,9 @@ function App(){
   if(error){setWorkflowError(error);return;}
   setWorkflowError('');
   if(active){if(active.id!==task.id)setDialog({kind:'timer',target:task});return;}
+  if(isRunning(task.id))return;
   const timestamp=Date.now();
+  if(autoFloatTaskTimer)floating.open(taskTimerKey(task.id,timestamp),'Task timer');
   const openedWith=task.status==='Paused'?'Resumed':'Started';
   setNow(timestamp);
   commit(openedWith==='Resumed'?'Resumed timer':'Started timer',(s,started)=>{
@@ -296,8 +309,10 @@ function App(){
  }
  function startBreak(booking=null){
   if(active){setWorkflowError('Pause or complete your task timer before starting a break.');return;}
+  if(activeBreak||booking&&!breakPlans[profile]?.some(plan=>plan.id===booking&&!plan.used))return;
   setWorkflowError('');
   const start=Date.now(),id=crypto.randomUUID();
+  floating.open(breakTimerKey(id),'Break timer');
   setNow(start);
   setState(s=>{
    if(s.activeTimers[profile]||s.activeBreaks?.[profile])return s;
@@ -389,14 +404,13 @@ function App(){
  {workflowError&&<div className="workflow-error" role="alert"><span>{workflowError}</span><button aria-label="Dismiss error" onClick={()=>setWorkflowError('')}>Dismiss</button></div>}
  {activeTask&&<div className="timer"><div>{badge('In progress')} <button className="link" onClick={()=>navigate('Task',activeTask.id)}>{activeTask.file} · {typeLabel(activeTask.type)}</button></div>
  <div><strong>{clock(elapsed)}</strong>
-  <FloatingTimer key={[profile,activeTask.id,active.started].join(':')} taskId={activeTask.id} taskName={activeTask.file}
-   type={typeLabel(activeTask.type)} started={active.started} spent={activeTask.spent??0} clock={clock}
-   pause={()=>stop()} complete={()=>stop(true)}/>
+  {floating.control}
   <button onClick={()=>stop()}>Pause</button><button className="primary" onClick={()=>stop(true)}>Complete</button>
  </div></div>}
  {activeBreak&&view!=='My work'&&<div className="timer"><div>{badge('On break')}</div>
-  <div><strong>{clock(Math.max(0,Math.floor((now-activeBreak.start)/1000)))}</strong><button onClick={endBreak}>End break</button></div>
+  <div><strong>{clock(Math.max(0,Math.floor((now-activeBreak.start)/1000)))}</strong>{floating.control}<button onClick={endBreak}>End break</button></div>
  </div>}
+ {floating.card}
  {view==='Overview'&&<>
  <div className="metrics">{stats.map(([label,value,detail,icon])=><div className="metric" key={label}><div className="metric-top"><span>{label}</span><b>{icon}</b></div><strong>{value}</strong><small>{detail}</small></div>)}</div>
  <div className="overview-grid"><section className="panel chart"><div className="panel-header"><div><h2>Quality trend</h2><p>Confirmed defects per 100 inspected pages</p></div><span className="subtle">Last 4 weeks</span></div><div className="bars" aria-label="Example quality trend: 1.2, 0.9, 0.7, 0.6"><div className="chart-grid"/>{[1.2,.9,.7,.6].map((v,i)=><div className="bar-column" key={i}><div style={{height:(v/1.2)*86+'%'}} className="chart-bar"><span>{v.toFixed(1)}</span></div><small>Week {i+1}</small></div>)}</div></section>
@@ -439,7 +453,16 @@ function App(){
   <section className="panel"><div className="panel-header filters">{searchInput('Search ready work')}{selectFilter(['All','Unassigned','Assigned'])}</div>{taskTable(tasks.filter(t=>!parents.has(t.id)&&phase(t.status)==='To-do'&&!taskBlocked(t)&&search(t.file,typeLabel(t.type),t.request)&&(filter==='All'||(filter==='Assigned')===Boolean(t.person))))}</section>}
  </>}
  {view==='Planning'&&!canManage&&canSeeResources&&<ResourceTimeline active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/>}
- {view==='Profile'&&<ResourceTimeline key={profile} person={profile} active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/>}
+ {view==='Profile'&&<>
+  <section className="panel"><div className="panel-header"><h2>Timer preferences</h2></div>
+   <label className="timer-preference"><input type="checkbox" checked={autoFloatTaskTimer}
+    onChange={event=>changeProfilePreference({autoFloatTaskTimer:event.target.checked})}/>
+    <span><strong>Automatically open the floating task timer</strong><small>Break timers always open when you start a break.</small></span>
+   </label>
+  </section>
+  <section className="panel break-section"><TodayBreaks {...{dailyBreaks,date,clock}} expanded/></section>
+  <ResourceTimeline key={profile} person={profile} active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/>
+ </>}
  {view==='Teams'&&canManage&&<>
  {shiftEditors.length>0&&<ShiftSettings people={shiftEditors} profiles={profiles} timeOff={timeOff}
   updateTimeOff={(name,change)=>{
@@ -463,7 +486,7 @@ function App(){
  <TimelineAdmin title="Activity log access" description="Choose which demo roles can review changes on requests and tasks."
   access={activityAccess} onChange={(name,enabled)=>setState(s=>({...s,activityAccess:{...s.activityAccess,[name]:enabled}}))}/>
  </>}
- {view==='My work'&&<><Breaks plans={breakPlans[profile]??[]} logs={breakLogs[profile]??[]} running={activeBreak}
+ {view==='My work'&&<><Breaks plans={breakPlans[profile]??[]} running={activeBreak} floatControl={activeBreak&&floating.control} dailyBreaks={dailyBreaks}
   {...{zone,toInstant,date,now,clock}} book={bookBreak} start={startBreak} end={endBreak} remove={cancelBreak}/>
  <section className="panel"><div className="panel-header filters">{tabs(['Table','Cards'],mode,setMode)}{<select aria-label="Filter status" value={filter} onChange={e=>setFilter(e.target.value)}><option value="All">All statuses</option>
  {['To-do','In progress','Complete'].map(group=><optgroup key={group} label={group}>{statuses.filter(status=>status.group===group).map(status=>
