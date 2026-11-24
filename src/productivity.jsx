@@ -74,7 +74,7 @@ function TimeOff({zone,entries,update}){
  </div>;
 }
 
-export function Productivity({tasks,timers,statuses,now,teamGroups,profiles,shifts,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff}){
+export function Productivity({tasks,timers,statuses,now,teamGroups,profiles,shifts,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff,breakPlans,breakLogs,activeBreaks}){
  const [day,setDay]=useState(()=>dayAt(now,zones[zone]));
  const [mode,setMode]=useState('Day'),[customEnd,setCustomEnd]=useState(day);
  const [team,setTeam]=useState(''),[member,setMember]=useState('');
@@ -92,6 +92,13 @@ export function Productivity({tasks,timers,statuses,now,teamGroups,profiles,shif
  const windows=Object.fromEntries(Object.keys(profiles).map(name=>[name,
   shiftWindows(startDay,endDay,shifts[name]??defaultShift(profiles[name].zone),zones,toInstant,zone,timeOff[name])]));
  const events=workEvents(tasks,timers,statuses,now,archivedFiles);
+ for(const name of Object.keys(profiles)){
+  const planned=(breakPlans[name]??[]).map(item=>({...item,kind:'plannedBreak',member:name}));
+  const logged=(breakLogs[name]??[]).map(item=>({...item,kind:'actualBreak',member:name}));
+  const active=activeBreaks[name];
+  events.push(...planned,...logged);
+  if(active)events.push({...active,kind:'actualBreak',member:name,end:now,detail:'Running'});
+ }
  const individuals=memberMetrics(people,teamGroups,events,windows,from,through,team);
  const teamRows=(team?[team]:teams).map(name=>{
   const names=namesForTeam(teamGroups,name).filter(person=>!member||person===member);

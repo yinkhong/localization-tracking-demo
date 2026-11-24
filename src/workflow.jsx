@@ -36,7 +36,7 @@ export function bootstrapWorkflow(state) {
 const trackedFields = {
  requests:['title','account','owner','status','risk','due','forecast','files','types','initialMinutes'],
  workflowFiles:['name','archivedAt'],
- tasks:['file','fileId','type','person','pages','status','due','scheduledStart','scheduledEnd','dependsOn','parentTask','spent'],
+ tasks:['file','fileId','type','person','pages','status','due','scheduledStart','scheduledEnd','dependsOn','parentTask','spent','sessions'],
  defects:['title','severity','status','request','task','relatedTasks','description','filePath','steps','rootCause','corrective','preventive','attachments','assignedTo','reviewedBy','operator','team','account','acknowledgments'],
 };
 const recordNames = {requests:'Request',workflowFiles:'File',tasks:'Task',defects:'Defect'};
@@ -44,7 +44,7 @@ const fieldNames = {
  title:'Title',account:'Account',owner:'Project owner',person:'Assignee',type:'Task type',pages:'Pages',
  status:'Status',risk:'Delivery risk',due:'Due',forecast:'Forecast',files:'Planned files',types:'Task types',
  initialMinutes:'Estimated effort (min)',name:'File name',file:'Workflow file name',fileId:'Workflow file ID',scheduledStart:'Scheduled start',
- scheduledEnd:'Scheduled end',dependsOn:'Predecessor',parentTask:'Parent task',spent:'Recorded work (sec)',
+ scheduledEnd:'Scheduled end',dependsOn:'Predecessor',parentTask:'Parent task',spent:'Recorded work (sec)',sessions:'Work sessions',
  severity:'Severity',request:'Related request',task:'Primary related task',relatedTasks:'Additional related tasks',description:'Incident summary',filePath:'File path',steps:'Steps & operators',rootCause:'Root cause',corrective:'Corrective actions',preventive:'Preventive actions',attachments:'Attachments',
  archivedAt:'Deleted at',timer:'Timer started at',assignedTo:'Assigned to',reviewedBy:'Reviewed by',operator:'Linked operator',team:'Team',acknowledgments:'Signed acknowledgment',
 };
@@ -66,6 +66,7 @@ export function withActivity(before, next, actor, timestamp, action) {
    const old=previous.get(record.id);
    if(record===old) continue;
    const changes=fields.flatMap(key=>{
+    if(key==='sessions'&&action!=='Corrected work time')return [];
     const from=trackedValue(key,old?.[key]),to=trackedValue(key,record[key]);
     if(JSON.stringify(from)===JSON.stringify(to))return [];
     if(key==='type'&&collection==='tasks'){
@@ -119,6 +120,8 @@ export function withActivity(before, next, actor, timestamp, action) {
 function activityValue(key,value,date) {
  if(value==null||Array.isArray(value)&&!value.length) return '—';
  if(dateFields.includes(key)) return date(value);
+ if(key==='sessions')return value.map(session=>[session.operator,date(session.startedAt)+' – '+date(session.endedAt),
+  session.correction?.reason].filter(Boolean).join(' · ')).join(' / ');
  if(Array.isArray(value)) return value.join(', ');
  if(key==='description') return value.replace(/<[^>]*>/g,'');
  return String(value);

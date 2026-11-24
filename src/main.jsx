@@ -14,6 +14,8 @@ import {moveWorkflowTask} from './workflow-order';
 import {defaultTeamGroups,TeamOrg} from './team-org';
 import {Productivity,ShiftSettings} from './productivity';
 import {defaultShift,isCancelled} from './productivity-data';
+import {Breaks,CorrectTime} from './time-entry-ui';
+import {correctTaskTime,defaultCorrectionAccess,planBreak} from './time-entry';
 import './style.css';
 
 const sections=[['Overview','◫'],['Requests','▤'],['Planning','▦'],['My work','✓'],['Defects','◇'],['Reporting','▥'],['Productivity','▧'],['Teams','♧']];
@@ -36,6 +38,10 @@ function App(){
  const archivedFiles=new Set(workflowFiles.filter(file=>file.archivedAt).map(file=>file.id));
  const tasks=allTasks.filter(task=>!archivedFiles.has(task.fileId));
  const shifts=state.shifts??{}, timeOff=state.timeOff??{};
+ const correctionAccess=state.correctionAccess??defaultCorrectionAccess;
+ const breakPlans=state.breakPlans??{},breakLogs=state.breakLogs??{},activeBreaks=state.activeBreaks??{};
+ const activeBreak=activeBreaks[profile];
+ const anyBreak=Object.keys(activeBreaks).length>0;
  const shiftDefaults=Object.fromEntries(Object.keys(profiles).map(name=>[name,defaultShift(demoProfiles[name]?.zone??profiles[name].zone)]));
  const active=activeTimers[profile];
  const timers=Object.values(activeTimers);
@@ -55,11 +61,11 @@ function App(){
  const accountLabel=id=>accounts.find(account=>account.id===id)?.label??id;
  useEffect(()=>{try{localStorage.setItem(dataKey,JSON.stringify(state));}catch{setNotice('Browser storage is full. These changes are available for this session.');}},[state]);
  useEffect(()=>{
-  if(view!=='Productivity'&&!Object.keys(activeTimers).length)return;
+  if(view!=='Productivity'&&!Object.keys(activeTimers).length&&!anyBreak)return;
   setNow(Date.now());
-  const id=setInterval(()=>setNow(Date.now()),Object.keys(activeTimers).length?1000:10000);
+  const id=setInterval(()=>setNow(Date.now()),Object.keys(activeTimers).length||anyBreak?1000:10000);
   return()=>clearInterval(id);
- },[activeTimers,view]);
+ },[activeTimers,view,anyBreak]);
  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),3200);return()=>clearTimeout(t);},[notice]);
  useEffect(()=>{const close=e=>{if(e.key==='Escape')setDialog(null);};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[]);
  const displayTime={hour:'2-digit',minute:'2-digit',hourCycle:'h23'};
@@ -228,6 +234,7 @@ function App(){
  }
  function start(task){
   if(task.person!==profile||parents.has(task.id)||phase(task.status)==='Complete')return;
+  if(activeBreak){setWorkflowError('End your break before starting a task timer.');return;}
   const error=dependencyError(task,tasks,statuses);
   if(error){setWorkflowError(error);return;}
   setWorkflowError('');
@@ -237,7 +244,7 @@ function App(){
   setNow(timestamp);
   commit(openedWith==='Resumed'?'Resumed timer':'Started timer',(s,started)=>{
    const current=s.tasks.find(item=>item.id===task.id);
-   if(current?.person!==profile||s.activeTimers[profile]||
+   if(current?.person!==profile||s.activeTimers[profile]||s.activeBreaks?.[profile]||
       Object.values(s.activeTimers).some(timer=>timer.id===task.id))return s;
    return {...s,activeTimers:{...s.activeTimers,[profile]:{id:task.id,started,operator:profile,openedWith}},
     tasks:s.tasks.map(item=>item.id===task.id?patchRecord(item,{status:phase(item.status)==='In progress'&&item.status!=='Paused'?item.status:'In progress'},started):item)};
@@ -261,6 +268,54 @@ function App(){
    return {...s,activeTimers,tasks:updated};
   });
   setDialog(null);setNotice(complete?'Task completed':'Timer paused');
+ }
+ function saveCorrection(values){
+  const timestamp=Date.now();
+  const check=correctTaskTime(state,task.id,values,profile,timestamp);
+  if(check.error)return check.error;
+  commit('Corrected work time',s=>correctTaskTime(s,task.id,values,profile,timestamp).state??s,timestamp);
+  setNotice('Work time correction saved');
+ }
+ function bookBreak(start,end){
+  const timestamp=Date.now(),id=crypto.randomUUID();
+  const error=planBreak(breakPlans[profile]??[],start,end,timestamp);
+  if(error)return error;
+  setState(s=>{
+   const plans=s.breakPlans?.[profile]??[];
+   if(planBreak(plans,start,end,timestamp))return s;
+   return {...s,breakPlans:{...s.breakPlans,[profile]:[...plans,{id,start,end}]}};
+  });
+  setNotice('Break booked');
+ }
+ function cancelBreak(id){
+  setState(s=>{
+   if(s.activeBreaks?.[profile]?.booking===id)return s;
+   return {...s,breakPlans:{...s.breakPlans,[profile]:(s.breakPlans?.[profile]??[]).filter(plan=>plan.id!==id||plan.used)}};
+  });
+ }
+ function startBreak(booking=null){
+  if(active){setWorkflowError('Pause or complete your task timer before starting a break.');return;}
+  setWorkflowError('');
+  const start=Date.now(),id=crypto.randomUUID();
+  setNow(start);
+  setState(s=>{
+   if(s.activeTimers[profile]||s.activeBreaks?.[profile])return s;
+   if(booking&&!s.breakPlans?.[profile]?.some(plan=>plan.id===booking&&!plan.used))return s;
+   return {...s,activeBreaks:{...s.activeBreaks,[profile]:{id,start,booking}}};
+  });
+ }
+ function endBreak(){
+  const end=Date.now();
+  setWorkflowError('');
+  setState(s=>{
+   const running=s.activeBreaks?.[profile];
+   if(!running)return s;
+   const {[profile]:removed,...activeBreaks}=s.activeBreaks;
+   const logged=[...(s.breakLogs?.[profile]??[]),{...running,end:Math.max(running.start,end)}];
+   const plans=(s.breakPlans?.[profile]??[]).map(plan=>plan.id===running.booking?{...plan,used:true}:plan);
+   return {...s,activeBreaks,breakLogs:{...s.breakLogs,[profile]:logged},breakPlans:{...s.breakPlans,[profile]:plans}};
+  });
+  setNotice('Break recorded');
  }
  const search=(...vals)=>vals.join(' ').toLowerCase().includes(query.toLowerCase());
  const riskSummary = requests.filter(r=>r.risk==='At risk');
@@ -332,12 +387,15 @@ function App(){
  <p>{heading?.[1]}</p></div>{(['Overview','Requests'].includes(view)&&role!=='Operator')&&<button className="primary" onClick={()=>setDialog({kind:'request'})}>＋ New request</button>}{view==='Defects'&&<button className="primary" onClick={()=>setDialog({kind:'defect'})}>＋ New report</button>}</div>
  {workflowError&&<div className="workflow-error" role="alert"><span>{workflowError}</span><button aria-label="Dismiss error" onClick={()=>setWorkflowError('')}>Dismiss</button></div>}
  {activeTask&&<div className="timer"><div>{badge('In progress')} <button className="link" onClick={()=>navigate('Task',activeTask.id)}>{activeTask.file} · {typeLabel(activeTask.type)}</button></div><div><strong>{clock(elapsed)}</strong><button onClick={()=>stop()}>Pause</button><button className="primary" onClick={()=>stop(true)}>Complete</button></div></div>}
+ {activeBreak&&view!=='My work'&&<div className="timer"><div>{badge('On break')}</div>
+  <div><strong>{clock(Math.max(0,Math.floor((now-activeBreak.start)/1000)))}</strong><button onClick={endBreak}>End break</button></div>
+ </div>}
  {view==='Overview'&&<>
  <div className="metrics">{stats.map(([label,value,detail,icon])=><div className="metric" key={label}><div className="metric-top"><span>{label}</span><b>{icon}</b></div><strong>{value}</strong><small>{detail}</small></div>)}</div>
  <div className="overview-grid"><section className="panel chart"><div className="panel-header"><div><h2>Quality trend</h2><p>Confirmed defects per 100 inspected pages</p></div><span className="subtle">Last 4 weeks</span></div><div className="bars" aria-label="Example quality trend: 1.2, 0.9, 0.7, 0.6"><div className="chart-grid"/>{[1.2,.9,.7,.6].map((v,i)=><div className="bar-column" key={i}><div style={{height:(v/1.2)*86+'%'}} className="chart-bar"><span>{v.toFixed(1)}</span></div><small>Week {i+1}</small></div>)}</div></section>
  <section className="panel attention"><div className="panel-header"><div><h2>Needs attention</h2><p>Delivery risks and next actions</p></div></div>{riskSummary.map(r=><div className="attention-item" key={r.id}><div><button className="link record" onClick={()=>navigate('Request',r.id)}>{r.title}</button><small>{r.id} · Due {date(r.due)}</small></div>{badge('At risk')}</div>)}<div className="attention-item"><div><button className="link record" onClick={()=>navigate('Planning')}>Unassigned work</button><small>Review available operators</small></div>{badge('Ready')}</div><div className="attention-item"><div><button className="link record" onClick={()=>navigate('Defects')}>Defect review queue</button><small>Open related evidence and tasks</small></div>{badge('Under review')}</div></section></div>
  <section className="panel"><div className="panel-header"><h2>Recent requests</h2><button onClick={()=>navigate('Requests')}>View all requests</button></div>{requestTable(requests.slice(0,4))}</section></>}
- {view==='Productivity'&&role==='Manager'&&<Productivity tasks={allTasks} shifts={{...shiftDefaults,...shifts}} {...{timers,statuses,now,teamGroups,profiles,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff}}/>}
+ {view==='Productivity'&&role==='Manager'&&<Productivity tasks={allTasks} shifts={{...shiftDefaults,...shifts}} {...{timers,statuses,now,teamGroups,profiles,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff,breakPlans,breakLogs,activeBreaks}}/>}
  {view==='Reporting'&&canManage&&<Reporting taskStatuses={statuses} {...{requests,tasks,requestStatuses,taskTypes,people,typeLabel,date,zone,navigate,teamGroups,accountLabel}}/>}
  {view==='Overview'&&role==='Manager'&&<DefectPerformance records={defects} profiles={profiles} groups={teamGroups} accountLabel={accountLabel}/>}
  {view==='Requests'&&<section className="panel"><div className="panel-header filters">{searchInput('Search requests')}{selectFilter(['All','At risk','On track','Unscheduled'])}</div>{requestTable(requests.filter(r=>search(r.title,r.id,accountLabel(r.account))&&(filter==='All'||r.risk===filter)))}</section>}
@@ -393,12 +451,16 @@ function App(){
  <StatusAdmin title="Request status labels" id="request-status-labels" statuses={requestStatuses} save={next=>setState(s=>({...s,requestStatuses:next}))}/>
  <StatusAdmin title="Task status labels" id="task-status-labels" statuses={statuses} save={next=>setState(s=>({...s,statuses:next}))}/>
  <TaskTypeAdmin taskTypes={taskTypes} save={next=>setState(s=>({...s,taskTypes:next}))}/>
+ <TimelineAdmin title="Work time correction access" description="Choose which roles can add or correct backdated task work sessions."
+  access={correctionAccess} onChange={(name,enabled)=>setState(s=>({...s,correctionAccess:{...correctionAccess,[name]:enabled}}))}/>
  <TimelineAdmin title="Activity log access" description="Choose which demo roles can review changes on requests and tasks."
   access={activityAccess} onChange={(name,enabled)=>setState(s=>({...s,activityAccess:{...s.activityAccess,[name]:enabled}}))}/>
  </>}
- {view==='My work'&&<section className="panel"><div className="panel-header filters">{tabs(['Table','Cards'],mode,setMode)}{<select aria-label="Filter status" value={filter} onChange={e=>setFilter(e.target.value)}><option value="All">All statuses</option>
+ {view==='My work'&&<><Breaks plans={breakPlans[profile]??[]} logs={breakLogs[profile]??[]} running={activeBreak}
+  {...{zone,toInstant,date,now,clock}} book={bookBreak} start={startBreak} end={endBreak} remove={cancelBreak}/>
+ <section className="panel"><div className="panel-header filters">{tabs(['Table','Cards'],mode,setMode)}{<select aria-label="Filter status" value={filter} onChange={e=>setFilter(e.target.value)}><option value="All">All statuses</option>
  {['To-do','In progress','Complete'].map(group=><optgroup key={group} label={group}>{statuses.filter(status=>status.group===group).map(status=>
-  <option key={status.id} value={status.id}>{status.label}</option>)}</optgroup>)}</select>}</div>{(()=>{const items=tasks.filter(t=>!parents.has(t.id)&&t.person===profile&&(filter==='All'||t.status===filter));return mode==='Table'?taskTable(items):<div className="task-cards">{items.map(t=><article key={t.id}><small>{typeLabel(t.type)} · {t.request}</small><button className="link record" onClick={()=>navigate('Task',t.id)}>{t.file}</button>{statusBadge(t.status)}<p>{date(t.due)}</p>{taskAction(t)}</article>)}{!items.length&&<p className="empty">No matching tasks.</p>}</div>;})()}</section>}
+  <option key={status.id} value={status.id}>{status.label}</option>)}</optgroup>)}</select>}</div>{(()=>{const items=tasks.filter(t=>!parents.has(t.id)&&t.person===profile&&(filter==='All'||t.status===filter));return mode==='Table'?taskTable(items):<div className="task-cards">{items.map(t=><article key={t.id}><small>{typeLabel(t.type)} · {t.request}</small><button className="link record" onClick={()=>navigate('Task',t.id)}>{t.file}</button>{statusBadge(t.status)}<p>{date(t.due)}</p>{taskAction(t)}</article>)}{!items.length&&<p className="empty">No matching tasks.</p>}</div>;})()}</section></>}
  {view==='Task'&&task&&archivedFiles.has(task.fileId)&&<section className="panel"><p className="note">This task belongs to a deleted file.</p>
   <button className="link" onClick={()=>navigate('Request',task.request)}>Open related request</button></section>}
  {view==='Task'&&task&&!archivedFiles.has(task.fileId)&&<><section className="panel details"><div className="panel-header"><div>{(taskIsParent||!editable(task))&&statusBadge(task.status)} <button className="link" onClick={()=>navigate('Request',task.request)}>{task.request}</button></div>{taskAction(task)}</div>
@@ -419,7 +481,10 @@ function App(){
  {canSeeActivity&&<details className="task-activity"><summary>Activity log</summary>
   <ActivityLog key={task.id} entries={activity.filter(entry=>entry.taskIds.includes(task.id))} date={historyDate}/>
  </details>}
- <SessionList task={task} active={timers} date={historyDate} clock={clock} now={now}/>
+ <SessionList task={task} active={timers} date={historyDate} clock={clock} now={now}>
+  {correctionAccess[role]&&!taskIsParent&&<CorrectTime key={task.id} {...{task,people,zone,toInstant,localValue}}
+   running={timers.find(timer=>timer.id===task.id)} date={historyDate} save={saveCorrection}/>}
+ </SessionList>
  {(canManage||taskIsParent)&&<section className="panel"><div className="panel-header"><h2>Subtasks</h2>{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(workflowFiles.find(file=>file.id===task.fileId),task)}>Add subtask</button>}</div>{taskTable(tasks.filter(t=>t.parentTask===task.id))}</section>}
  <section className="panel"><div className="panel-header"><h2>Related defects</h2><button onClick={()=>setDialog({kind:'defect',request:task.request,task:task.id})}>New report</button></div>{defectTable(defects.filter(d=>d.task===task.id||d.relatedTasks?.includes(task.id)))}</section></>}
  {view==='Defects'&&<section className="panel"><div className="panel-header filters">{searchInput('Search defect reports')}{selectFilter(['All','Open','Under review','Closed'])}</div>{defectTable(defects.filter(d=>search(d.id,d.title,d.request)&&(filter==='All'||d.status===filter)))}</section>}

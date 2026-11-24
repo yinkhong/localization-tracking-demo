@@ -70,17 +70,18 @@ export function taskSessions(task, active) {
  }] : saved;
 }
 
-export function SessionList({task, active, date, clock, now}) {
+export function SessionList({task, active, date, clock, now,children}) {
  const sessions = taskSessions(task, active);
  return <section className="panel"><div className="panel-header"><h2>Work sessions</h2></div>
   {sessions.length ? <div className="table-wrap"><table>
    <thead><tr><th>Operator</th><th>Start</th><th>End</th><th>Active time</th></tr></thead>
    <tbody>{sessions.map((item, index) => <tr key={index}>
-    <td>{item.operator || '—'}</td><td>{date(item.startedAt)}<small>{item.openedWith}</small></td>
+    <td>{item.operator || '—'}{item.correction&&<small>Corrected by {item.correction.actor} · {date(item.correction.at)} · {item.correction.reason}</small>}</td><td>{date(item.startedAt)}<small>{item.openedWith}</small></td>
     <td>{item.endedAt ? date(item.endedAt) : '—'}<small>{item.closedWith || 'Running'}</small></td>
     <td>{clock(Math.max(0, Math.floor(((item.endedAt ?? now) - item.startedAt) / 1000)))}</td>
    </tr>)}</tbody>
   </table></div> : <p className="empty">No timed sessions recorded.</p>}
+  {children}
  </section>;
 }
 

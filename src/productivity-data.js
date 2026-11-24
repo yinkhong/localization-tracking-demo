@@ -112,6 +112,7 @@ export function memberMetrics(members,groups,events,windows,from,through,team=''
    const point=event.kind==='completed';
    const inRange=point?event.start>=from&&event.start<through:event.end>from&&event.start<through;
    if(event.member!==name||!inRange)return false;
+   if(!event.task)return !team||memberships.some(group=>group.team===team);
    const preferred=memberships.find(group=>group.team===teamByType[event.task.type])??memberships[0];
    return !team||preferred?.team===team;
   }).sort((a,b)=>a.start-b.start);
