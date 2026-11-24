@@ -1,0 +1,68 @@
+.work-timer-window {
+ margin:0;
+ background:#f5f6fa;
+}
+.work-timer-card {
+ box-sizing:border-box;
+ font:14px/1.35 system-ui,sans-serif;
+ color:#17203c;
+ background:#fff;
+ padding:14px;
+ display:grid;
+ gap:5px;
+ min-height:100vh;
+ align-content:center;
+}
+.work-timer-in-page {
+ position:fixed;
+ z-index:45;
+ inset:auto 16px 16px auto;
+ width:min(330px,calc(100vw - 32px));
+ min-height:auto;
+ border:1px solid #dce0ef;
+ border-radius:12px;
+ box-shadow:0 12px 32px #17203c26;
+}
+.work-timer-card .work-timer-header {
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ color:#5147b2;
+ font-size:.76rem;
+ font-weight:700;
+}
+.work-timer-task,.work-timer-meta {
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+}
+.work-timer-task {font-size:1rem}
+.work-timer-meta {color:#596482; font-size:.77rem}
+.work-timer-bottom {
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ flex-wrap:wrap;
+ gap:8px;
+ margin-top:8px;
+}
+.work-timer-bottom output {
+ font-variant-numeric:tabular-nums;
+ font-size:1.35rem;
+ font-weight:750;
+}
+.work-timer-actions {display:flex; gap:5px}
+.work-timer-card button {
+ border:1px solid #dce0ef;
+ background:white;
+ color:#253253;
+ border-radius:6px;
+ padding:.4rem .55rem;
+ font:650 .79rem system-ui,sans-serif;
+ cursor:pointer;
+}
+.work-timer-card button:hover {background:#eeedff}
+.work-timer-card button:focus-visible {outline:2px solid #756df3; outline-offset:2px}
+.work-timer-card button.work-timer-complete {background:#4847cd; color:white; border-color:#4847cd}
+.work-timer-card button.work-timer-complete:hover {background:#3634ab}
+.work-timer-card button.work-timer-dismiss {padding:0 .4rem; font-size:1rem}

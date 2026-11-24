@@ -16,6 +16,7 @@ import {Productivity,ShiftSettings} from './productivity';
 import {defaultShift,isCancelled} from './productivity-data';
 import {Breaks,CorrectTime} from './time-entry-ui';
 import {correctTaskTime,defaultCorrectionAccess,planBreak} from './time-entry';
+import {FloatingTimer} from './floating-timer';
 import './style.css';
 
 const sections=[['Overview','◫'],['Requests','▤'],['Planning','▦'],['My work','✓'],['Defects','◇'],['Reporting','▥'],['Productivity','▧'],['Teams','♧']];
@@ -386,7 +387,13 @@ function App(){
  </div>}
  <p>{heading?.[1]}</p></div>{(['Overview','Requests'].includes(view)&&role!=='Operator')&&<button className="primary" onClick={()=>setDialog({kind:'request'})}>＋ New request</button>}{view==='Defects'&&<button className="primary" onClick={()=>setDialog({kind:'defect'})}>＋ New report</button>}</div>
  {workflowError&&<div className="workflow-error" role="alert"><span>{workflowError}</span><button aria-label="Dismiss error" onClick={()=>setWorkflowError('')}>Dismiss</button></div>}
- {activeTask&&<div className="timer"><div>{badge('In progress')} <button className="link" onClick={()=>navigate('Task',activeTask.id)}>{activeTask.file} · {typeLabel(activeTask.type)}</button></div><div><strong>{clock(elapsed)}</strong><button onClick={()=>stop()}>Pause</button><button className="primary" onClick={()=>stop(true)}>Complete</button></div></div>}
+ {activeTask&&<div className="timer"><div>{badge('In progress')} <button className="link" onClick={()=>navigate('Task',activeTask.id)}>{activeTask.file} · {typeLabel(activeTask.type)}</button></div>
+ <div><strong>{clock(elapsed)}</strong>
+  <FloatingTimer key={[profile,activeTask.id,active.started].join(':')} taskId={activeTask.id} taskName={activeTask.file}
+   type={typeLabel(activeTask.type)} started={active.started} spent={activeTask.spent??0} clock={clock}
+   pause={()=>stop()} complete={()=>stop(true)}/>
+  <button onClick={()=>stop()}>Pause</button><button className="primary" onClick={()=>stop(true)}>Complete</button>
+ </div></div>}
  {activeBreak&&view!=='My work'&&<div className="timer"><div>{badge('On break')}</div>
   <div><strong>{clock(Math.max(0,Math.floor((now-activeBreak.start)/1000)))}</strong><button onClick={endBreak}>End break</button></div>
  </div>}
