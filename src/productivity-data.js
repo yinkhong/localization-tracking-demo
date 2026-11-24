@@ -5,7 +5,7 @@ export const dayAt = (timestamp, zone) => new Intl.DateTimeFormat('sv-SE',{timeZ
 export const defaultShift = zone => ({zone, days:Object.fromEntries([1,2,3,4,5].map(day=>[day,{start:'09:00',end:'17:00'}]))});
 const teamByType = {QC:'QC',Formatting:'DTP',Preflight:'DTP',Audio:'Audio',Braille:'Braille'};
 
-export function shiftWindows(day, endDay, shift, timeZones, toInstant, viewerZone) {
+export function shiftWindows(day, endDay, shift, timeZones, toInstant, viewerZone, leave=[]) {
  const viewerStart=Date.parse(toInstant(day+'T00:00',viewerZone));
  const viewerEnd=Date.parse(toInstant(endDay+'T00:00',viewerZone));
  const shiftZone=timeZones[shift.zone];
@@ -22,7 +22,32 @@ export function shiftWindows(day, endDay, shift, timeZones, toInstant, viewerZon
   const overlap=clip(startMs,endMs,viewerStart,viewerEnd);
   if(overlap)intervals.push(overlap);
  }
- return intervals;
+ return unavailableWindows(leave,toInstant,viewerStart,viewerEnd).reduce((remaining,{start,end})=>
+  remaining.flatMap(([left,right])=>[clip(left,right,left,start),clip(left,right,end,right)].filter(Boolean)),intervals);
+}
+
+export function unavailableWindows(leave,toInstant,from,through){
+ return leave.flatMap(item=>{
+  const start=Date.parse(toInstant(item.from+'T00:00',item.zone));
+  const end=Date.parse(toInstant(dayOffset(item.to,1)+'T00:00',item.zone));
+  const overlap=clip(start,end,from,through);
+  return overlap?[{start:overlap[0],end:overlap[1],reason:item.reason}]:[];
+ });
+}
+
+export function reportPeriod(day,mode,customEnd=day){
+ if(mode==='Range')return [day,dayOffset(customEnd<day?day:customEnd,1)];
+ if(mode==='Week'){
+  const weekday=new Date(day+'T00:00Z').getUTCDay();
+  const start=dayOffset(day,-((weekday+6)%7));
+  return [start,dayOffset(start,7)];
+ }
+ if(mode==='Month'){
+  const next=new Date(day.slice(0,7)+'-01T00:00Z');
+  next.setUTCMonth(next.getUTCMonth()+1);
+  return [day.slice(0,7)+'-01',next.toISOString().slice(0,10)];
+ }
+ return [day,dayOffset(day,1)];
 }
 
 function shiftInstant(day,time,zone,toInstant){
@@ -82,7 +107,7 @@ export function workEvents(tasks,timers,statuses,now,archivedFiles){
 export function memberMetrics(members,groups,events,windows,from,through,team=''){
  return members.map(name=>{
   const memberships=groups.filter(group=>group.members.includes(name));
-  const shifts=windows[name];
+  const shifts=windows[name]??[];
   const rows=events.filter(event=>{
    const point=event.kind==='completed';
    const inRange=point?event.start>=from&&event.start<through:event.end>from&&event.start<through;

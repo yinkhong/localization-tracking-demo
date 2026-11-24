@@ -1,16 +1,17 @@
 import React, {useState} from 'react';
 import {formatMinutes,zones} from './data';
 import {formatZoned,zoneCode} from './time-zone';
-import {dayAt,dayOffset,defaultShift,memberMetrics,shiftWindows,weekdays,workEvents} from './productivity-data';
+import {dayAt,dayOffset,defaultShift,memberMetrics,reportPeriod,shiftWindows,weekdays,workEvents} from './productivity-data';
+import {TeamWorkTimeline} from './team-work-timeline';
 
-const time = (value,zone) => formatZoned(value,zone,{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+const rangeDay = (value,zone) => formatZoned(value,zone,{month:'short',day:'numeric',year:'numeric'});
 const hours = minutes => formatMinutes(Math.round(minutes));
 const percentage = (minutes,capacity) => capacity ? Math.round(100*minutes/capacity)+'%' : '—';
 const namesForTeam = (groups,team) => [...new Set(groups.filter(group=>group.team===team).flatMap(group=>group.members))];
 const metrics = ['completed','scheduled','worked','capacity','used','planned'];
 const total = rows => Object.fromEntries(metrics.map(key=>[key,rows.reduce((sum,row)=>sum+row[key],0)]));
 
-export function ShiftSettings({people,profiles,shifts,save}){
+export function ShiftSettings({people,profiles,shifts,save,timeOff,updateTimeOff}){
  const [selection,setSelection]=useState(people[0]);
  const member=people.includes(selection)?selection:people[0];
  if(!member)return null;
@@ -19,6 +20,8 @@ export function ShiftSettings({people,profiles,shifts,save}){
   <label>Team member<select value={member} onChange={event=>setSelection(event.target.value)}>
    {people.map(name=><option key={name}>{name}</option>)}</select></label></div>
   <ShiftForm key={member} shift={shifts[member]??defaultShift(profiles[member].zone)} save={value=>save(member,value)}/>
+  <TimeOff key={member+':leave'} zone={shifts[member]?.zone??profiles[member].zone} entries={timeOff[member]??[]}
+   update={change=>updateTimeOff(member,change)}/>
  </section>;
 }
 
@@ -47,15 +50,47 @@ function ShiftForm({shift,save}){
  </form>;
 }
 
-export function Productivity({tasks,timers,statuses,now,teamGroups,profiles,shifts,zone,toInstant,navigate,typeLabel,archivedFiles}){
+function TimeOff({zone,entries,update}){
+ const [error,setError]=useState('');
+ return <div className="time-off-settings">
+  <h3>Time off</h3><p>Full days in the member’s shift time zone ({zoneCode(zone)}).</p>
+  <form className="timeline-controls" onSubmit={event=>{
+   event.preventDefault();
+   const form=event.currentTarget;
+   const {from,to,reason}=Object.fromEntries(new FormData(form));
+   if(to<from){setError('The last day must be on or after the first day.');return;}
+   const entry={id:crypto.randomUUID(),from,to,reason,zone};
+   update(list=>[...list,entry]);setError('');form.reset();
+  }}>
+   <label>First day<input name="from" type="date" required/></label>
+   <label>Last day<input name="to" type="date" required/></label>
+   <label>Availability<select name="reason">{['PTO','Sick leave','Holiday','Unavailable'].map(reason=><option key={reason}>{reason}</option>)}</select></label>
+   <button>Add time off</button>
+  </form>
+  {error&&<p className="error" role="alert">{error}</p>}
+  {entries.length>0&&<ul>{[...entries].sort((a,b)=>a.from.localeCompare(b.from)).map(entry=>
+   <li key={entry.id}><span>{entry.reason} · {entry.from}{entry.to!==entry.from&&' – '+entry.to} · {zoneCode(entry.zone,entry.from+'T12:00Z')}</span>
+    <button aria-label={'Remove '+entry.reason+' starting '+entry.from} onClick={()=>update(list=>list.filter(item=>item.id!==entry.id))}>Remove</button></li>)}</ul>}
+ </div>;
+}
+
+export function Productivity({tasks,timers,statuses,now,teamGroups,profiles,shifts,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff}){
  const [day,setDay]=useState(()=>dayAt(now,zones[zone]));
+ const [mode,setMode]=useState('Day'),[customEnd,setCustomEnd]=useState(day);
  const [team,setTeam]=useState(''),[member,setMember]=useState('');
  const teams=[...new Set(teamGroups.map(group=>group.team))];
  const roster=team?namesForTeam(teamGroups,team):Object.keys(profiles);
  const people=roster.filter(name=>!member||name===member);
- const following=dayOffset(day,1),from=Date.parse(toInstant(day+'T00:00',zone)),through=Date.parse(toInstant(following+'T00:00',zone));
+ const [startDay,endDay]=reportPeriod(day,mode,customEnd);
+ const from=Date.parse(toInstant(startDay+'T00:00',zone)),through=Date.parse(toInstant(endDay+'T00:00',zone));
+ function movePeriod(direction){
+  if(mode==='Month'){setDay(direction<0?dayOffset(startDay,-1):endDay);return;}
+  const span=Math.round((Date.parse(endDay)-Date.parse(startDay))/86400000);
+  setDay(dayOffset(day,direction*span));
+  if(mode==='Range')setCustomEnd(dayOffset(dayOffset(endDay,-1),direction*span));
+ }
  const windows=Object.fromEntries(Object.keys(profiles).map(name=>[name,
-  shiftWindows(day,following,shifts[name]??defaultShift(profiles[name].zone),zones,toInstant,zone)]));
+  shiftWindows(startDay,endDay,shifts[name]??defaultShift(profiles[name].zone),zones,toInstant,zone,timeOff[name])]));
  const events=workEvents(tasks,timers,statuses,now,archivedFiles);
  const individuals=memberMetrics(people,teamGroups,events,windows,from,through,team);
  const teamRows=(team?[team]:teams).map(name=>{
@@ -67,15 +102,23 @@ export function Productivity({tasks,timers,statuses,now,teamGroups,profiles,shif
  return <>
   <section className="panel"><div className="panel-header filters">
    <div className="timeline-controls">
-    <button aria-label="Previous day" onClick={()=>setDay(dayOffset(day,-1))}>‹</button>
-    <label>Day<input type="date" value={day} onChange={event=>{if(event.target.value)setDay(event.target.value);}}/></label>
-    <button aria-label="Next day" onClick={()=>setDay(following)}>›</button>
-    <button onClick={()=>setDay(dayAt(Date.now(),zones[zone]))}>Today</button>
+    <div className="segments" aria-label="Reporting period">{[['Day','Daily'],['Week','Weekly'],['Month','Monthly'],['Range','Date range']].map(([id,label])=>
+     <button key={id} aria-pressed={mode===id} onClick={()=>setMode(id)}>{label}</button>)}</div>
+    <button aria-label="Previous reporting period" onClick={()=>movePeriod(-1)}>‹</button>
+    <label>{mode==='Range'?'From':'Date'}<input type="date" value={day} onChange={event=>{
+     if(event.target.value){setDay(event.target.value);if(event.target.value>customEnd)setCustomEnd(event.target.value);}
+    }}/></label>
+    {mode==='Range'&&<label>Through<input type="date" min={day} value={customEnd<day?day:customEnd} onChange={event=>{
+     if(event.target.value>=day)setCustomEnd(event.target.value);
+    }}/></label>}
+    <button aria-label="Next reporting period" onClick={()=>movePeriod(1)}>›</button>
+    <button onClick={()=>{const today=dayAt(Date.now(),zones[zone]);setDay(today);setCustomEnd(today);}}>Today</button>
     <label>Team<select value={team} onChange={event=>{setTeam(event.target.value);setMember('');}}>
      <option value="">All teams</option>{teams.map(name=><option key={name}>{name}</option>)}</select></label>
     <label>Team member<select value={member} onChange={event=>setMember(event.target.value)}>
      <option value="">All members</option>{roster.map(name=><option key={name}>{name}</option>)}</select></label>
    </div></div>
+   <p className="productivity-note reporting-period">{rangeDay(from,zone)}{dayOffset(startDay,1)!==endDay&&' – '+rangeDay(through-1,zone)}</p>
    <div className="report-summary productivity-summary">
     {[
      ['Completed tasks',summary.completed],['Scheduled tasks',summary.scheduled],['Worked time',hours(summary.worked)],
@@ -97,23 +140,7 @@ export function Productivity({tasks,timers,statuses,now,teamGroups,profiles,shif
      </tr>)}</tbody>)}
    </table></div>
   </section>
-  <section className="panel"><div className="panel-header"><h2>Team work timeline</h2></div>
-   <div className="timeline-legend">{[['Shift','shift'],['Scheduled','scheduled'],['Worked','actual'],['Completed','completed']].map(([label,kind])=>
-    <span key={kind}><i className={'productivity-'+kind}/>{label}</span>)}</div>
-   <div className="timeline-scroll"><div className="resource-grid">
-    <div className="resource-axis"><span>Team member</span><div>{[0,.25,.50,.75].map(fraction=>
-     <span key={fraction} style={{left:fraction*100+'%'}}>{time(from+(through-from)*fraction,zone)}</span>)}</div></div>
-    {individuals.map(row=><div className="resource-member" key={row.name}><strong>{row.name}</strong>
-     <div className="resource-lanes">
-      <TimelineLane bars={row.shifts.map(([start,end])=>({start,end}))} kind="shift" from={from} through={through}
-       caption={bar=>time(bar.start,zone)+' – '+time(bar.end,zone)} empty="Off shift"/>
-      {row.rows.map((event,index)=><TimelineLane key={event.task.id+'-'+index} bars={[event]} kind={event.kind} from={from} through={through}
-       caption={bar=>[typeLabel(bar.task.type),bar.task.file,time(bar.start,zone)+(bar.end>bar.start?' – '+time(bar.end,zone):''),bar.detail].filter(Boolean).join(' · ')}
-       open={archivedFiles.has(event.task.fileId)?undefined:()=>navigate('Task',event.task.id)}/>)}
-      {!row.rows.length&&<div className="resource-lane no-work">No work recorded or scheduled</div>}
-     </div></div>)}
-   </div></div>
-  </section>
+  <TeamWorkTimeline {...{day,people,team,teamGroups,events,shifts,timeOff,zone,now,toInstant,typeLabel,navigate,archivedFiles}}/>
  </>;
 }
 
@@ -121,20 +148,3 @@ function ChartBar({label,value,max,text}){
  return <div className="productivity-bar">{max>0&&<meter className={label} min={0} max={max} value={value} aria-label={label}/>}<span>{text}</span></div>;
 }
 
-function TimelineLane({bars,kind,from,through,caption,open,empty}){
- return <div className={'resource-lane productivity-lane '+(bars.length?'':'no-work')}>
-  {bars.map((bar,index)=>{
-   const left=Math.max(0,100*(bar.start-from)/(through-from));
-   const end=Math.min(100,100*(bar.end-from)/(through-from));
-   const style={left:Math.min(left,99)+'%',width:Math.max(end-left,1)+'%'};
-   const label=caption(bar);
-   return <React.Fragment key={index}>
-    {open?<button className={'timeline-block productivity-'+kind} style={style} aria-label={label} title={label} onClick={open}/>:
-     <span className={'timeline-block productivity-'+kind} style={style} title={label}/>}
-   </React.Fragment>;
-  })}
-  <span className="productivity-caption"><strong>{{shift:'Shift',scheduled:'Scheduled',actual:'Worked',completed:'Completed'}[kind]}</strong>
-   {bars.length?bars.map((bar,index)=>open?<button key={index} className="link" onClick={open}>{caption(bar)}</button>:
-    <span key={index}>{caption(bar)}</span>):<span>{empty}</span>}</span>
- </div>;
-}
