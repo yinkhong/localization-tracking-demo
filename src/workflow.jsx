@@ -35,7 +35,7 @@ export function bootstrapWorkflow(state) {
 
 const trackedFields = {
  requests:['title','account','owner','status','risk','due','forecast','files','types','initialMinutes'],
- workflowFiles:['name'],
+ workflowFiles:['name','archivedAt'],
  tasks:['file','fileId','type','person','pages','status','due','scheduledStart','scheduledEnd','dependsOn','parentTask','spent'],
  defects:['title','severity','status','request','task','relatedTasks','description','filePath','steps','rootCause','corrective','preventive','attachments','assignedTo','reviewedBy','operator','team','account','acknowledgments'],
 };
@@ -46,9 +46,9 @@ const fieldNames = {
  initialMinutes:'Estimated effort (min)',name:'File name',file:'Workflow file name',fileId:'Workflow file ID',scheduledStart:'Scheduled start',
  scheduledEnd:'Scheduled end',dependsOn:'Predecessor',parentTask:'Parent task',spent:'Recorded work (sec)',
  severity:'Severity',request:'Related request',task:'Primary related task',relatedTasks:'Additional related tasks',description:'Incident summary',filePath:'File path',steps:'Steps & operators',rootCause:'Root cause',corrective:'Corrective actions',preventive:'Preventive actions',attachments:'Attachments',
- timer:'Timer started at',assignedTo:'Assigned to',reviewedBy:'Reviewed by',operator:'Linked operator',team:'Team',acknowledgments:'Signed acknowledgment',
+ archivedAt:'Deleted at',timer:'Timer started at',assignedTo:'Assigned to',reviewedBy:'Reviewed by',operator:'Linked operator',team:'Team',acknowledgments:'Signed acknowledgment',
 };
-const dateFields = ['due','forecast','scheduledStart','scheduledEnd','timer'];
+const dateFields = ['due','forecast','scheduledStart','scheduledEnd','timer','archivedAt'];
 function trackedValue(key,value) {
  if(key==='acknowledgments')return value?.map(entry=>entry.signature+' · revision '+entry.revision)??[];
  return key==='attachments' ? value?.map(file=>file.name) : value==='' ? null : value??null;
@@ -201,7 +201,7 @@ export function TaskTypePicker({value,taskTypes,onChange,onEdit,label='Task type
 }
 
 export function FileWorkflows({files,tasks,account,people,canManage,editable,locked,changeTask,openTask,
- addTask,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,editTaskStatuses,editTaskTypes,orders,moveTask}) {
+ addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,editTaskStatuses,editTaskTypes,orders,moveTask}) {
  const [drag,setDrag]=useState(null);
  const [target,setTarget]=useState(null);
  function placement(event){
@@ -227,6 +227,10 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
   };
   return <details className="file-workflow" key={file.id} open>
    <summary><strong>{file.name}</strong><span>{leaves.filter(task=>statusGroup(statuses,task.status)==='Complete').length} / {leaves.length} complete</span></summary>
+   {canManage&&<div className="file-workflow-actions">
+    <button onClick={()=>editFile(file)} aria-label={'Rename file '+file.name}>Rename</button>
+    <button onClick={()=>deleteFile(file)} aria-label={'Delete file '+file.name}>Delete</button>
+   </div>}
    {items.length?<div className="table-wrap"><table className="workflow-table">
     <thead><tr><th>Operation</th><th>Task type</th><th>Operator</th><th>Pages</th><th>Due</th><th>Effort</th><th>Status</th><th>Actions</th></tr></thead>
     <tbody>{rows.map(task=>{
@@ -248,7 +252,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      return <tr key={task.id} className={(task.parentTask?'workflow-subtask ':'')+(target?.id===task.id?'drag-'+target.mode:'')}
       onDragOver={event=>{if(drag?.file===file.id){event.preventDefault();setTarget({id:task.id,mode:placement(event)});}}}
       onDrop={event=>drop(file,event,task.id)}>
-      <td><div className="workflow-operation" style={{marginInlineStart:Math.min(depth,5)*18}}>
+      <td style={{'--workflow-indent':Math.min(depth,5)*18+'px'}}><div className="workflow-operation" style={{marginInlineStart:Math.min(depth,5)*18}} data-movable={canManage&&items.length>1}>
        {canManage&&(items.length>1||task.parentTask)&&<button type="button" className="drag-handle" draggable title="Drop in the center to nest, or at the edge to reorder. Arrow keys reorder. Left promotes to top level."
         aria-label={'Reorder '+task.id} onDragStart={event=>{
          event.dataTransfer.setData('text/plain',task.id);event.dataTransfer.effectAllowed='move';setDrag({file:file.id,id:task.id});
@@ -267,7 +271,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
        {parallel&&<small className="workflow-relation parallel-relation">Parallel · same prerequisites</small>}
        {!predecessors.length&&!parallel&&<small className="workflow-relation parallel-relation">No prerequisite</small>}
       </div></td>
-      <td>{canManage?<TaskTypePicker label={'Task type · '+task.id} value={task.type} {...{taskTypes}} disabled={locked(task.id)} onEdit={editTaskTypes} onChange={type=>save({type})}/>:typeLabel(task.type)}</td>
+      <td>{canManage&&!task.parentTask?<TaskTypePicker label={'Task type · '+task.id} value={task.type} {...{taskTypes}} disabled={locked(task.id)} onEdit={editTaskTypes} onChange={type=>save({type})}/>:typeLabel(task.type)}</td>
       <td>{parent?<span className="parent-note">Subtasks only</span>:canManage?<TaskSelect label={'Operator · '+task.id} value={task.person||''} options={[[ '', 'Unassigned' ],...people]}
        disabled={locked(task.id)} save={person=>save({person})}/>:task.person||'Unassigned'}</td>
       <td>{editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>

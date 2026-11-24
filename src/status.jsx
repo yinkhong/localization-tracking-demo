@@ -10,6 +10,7 @@ export const initialStatuses = [
  {id:'In progress',label:'In progress',group:'In progress'},
  {id:'Paused',label:'Paused',group:'In progress'},
  {id:'Complete',label:'Complete',group:'Complete'},
+ {id:'Cancelled',label:'Cancelled',group:'Complete'},
 ];
 
 export function statusGroup(statuses,id) {
@@ -205,7 +206,8 @@ export function resolveTasks(tasks,statuses,timestamp) {
 export function bootstrapStatuses(state) {
  const stored=state.statuses??initialStatuses;
  const requestStatuses=state.requestStatuses??stored.filter(status=>!isDependencyStatus(status.id));
- const statuses=[...stored,...initialStatuses.filter(status=>!stored.some(item=>item.id===status.id))];
+ const statuses=[...stored,...initialStatuses.filter(status=>!stored.some(item=>item.id===status.id||
+  status.id==='Cancelled'&&/^cancell?ed$/i.test(item.label)))];
  const timestamp=Date.now();
  const parents=parentTaskIds(state.tasks);
  const activeTimers={...state.activeTimers};

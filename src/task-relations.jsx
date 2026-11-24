@@ -49,7 +49,22 @@ export function updateRelationships(tasks,id,changes,statuses,timers,timestamp){
   return false;
  }
  if(next.some(hasCycle))return {error:'These relationships create a dependency loop.'};
- const resolved=resolveTasks(next,statuses,timestamp);
+ const previousById=new Map(tasks.map(item=>[item.id,item]));
+ const moving=new Set(next.filter(item=>item.parentTask&&item.parentTask!==previousById.get(item.id)?.parentTask).map(item=>item.id));
+ const inherited=next.map(item=>{
+  let cursor=item,type;
+  while(cursor.parentTask){
+   if(moving.has(cursor.id))type=byId.get(cursor.parentTask)?.type;
+   const ancestor=byId.get(cursor.parentTask);
+   if(!ancestor)break;
+   cursor=ancestor;
+  }
+  return type&&type!==item.type?{...item,type,modifiedAt:timestamp}:item;
+ });
+ if(timers.some(timer=>inherited.find(item=>item.id===timer.id)?.type!==previousById.get(timer.id)?.type)){
+  return {error:'Pause the running timer before moving work to a parent with another task type.'};
+ }
+ const resolved=resolveTasks(inherited,statuses,timestamp);
  if(resolved.some(item=>statusGroup(statuses,item.status)!=='To-do'&&blockedTask(item,resolved,statuses)&&
    !blockedTask(tasks.find(task=>task.id===item.id),tasks,statuses))){
   return {error:'Finish the new prerequisite first. A task that has already started cannot gain an incomplete prerequisite.'};
