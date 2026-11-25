@@ -1,4 +1,4 @@
-import {blockedTask, dependencyIds, incompletePredecessors, isDependencyStatus, parentTaskIds, StatusPicker, statusGroup, workflowOrder} from './status';
+import {blockedTask, dependencyIds, incompletePredecessors, isDependencyStatus, parentTaskIds, StatusPicker, statusColor, statusGroup, workflowOrder} from './status';
 import React, {useState} from 'react';
 import {zoneCode} from './time-zone';
 import {estimate, formatMinutes} from './data';
@@ -190,21 +190,49 @@ export function InlineDue({task,zone,localValue,toInstant,save,showError}) {
   }} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/>;
 }
 
-export function TaskStatus({task,statuses,locked,blocked,save,onEdit}) {
+export function TaskStatus({task,statuses,locked,blocked,save,editor}) {
  const choices=statuses.filter(status=>status.id===task.status||!isDependencyStatus(status.id)&&
   (!blocked||status.group!=='To-do'));
  return <StatusPicker label={'Status · '+task.id} statuses={choices} value={task.status}
-  disabled={locked} onEdit={onEdit} editLabel="Edit task status labels" onChange={status=>save({status})}/>;
+  disabled={locked} editor={editor} editLabel="Edit task status labels" onChange={status=>save({status})}/>;
 }
 
-export function TaskTypePicker({value,taskTypes,onChange,onEdit,label='Task type',disabled}){
- return <StatusPicker {...{value,label,onChange,onEdit,disabled}} placeholder="Select a task type"
+export function TaskTypePicker({value,taskTypes,onChange,editor,label='Task type',disabled}){
+ return <StatusPicker {...{value,label,onChange,editor,disabled}} placeholder="Select a task type"
   editLabel="Edit task types" groupOrder={['Task types']} color={()=>'gray'}
   statuses={taskTypes.map(item=>({...item,group:'Task types'}))}/>;
 }
 
+export function FileKanban({files,tasks,statuses,openFile}){
+ const columns={'To-do':[],'In progress':[],'Complete':[]};
+ const parents=parentTaskIds(tasks);
+ const byFile=new Map();
+ for(const task of tasks){
+  if(parents.has(task.id))continue;
+  const counts=byFile.get(task.fileId)??{total:0,complete:0,started:false};
+  const group=statusGroup(statuses,task.status);
+  counts.total++;
+  if(group==='Complete')counts.complete++;
+  if(group!=='To-do')counts.started=true;
+  byFile.set(task.fileId,counts);
+ }
+ for(const file of files){
+  const {total,complete,started}=byFile.get(file.id)??{total:0,complete:0,started:false};
+  const group=total>0&&total===complete?'Complete':started?'In progress':'To-do';
+  columns[group].push({file,total,complete});
+ }
+ return <div className="file-kanban" aria-label="File workflow board">
+  {Object.entries(columns).map(([group,cards])=><section className="kanban-column" key={group}>
+   <h2><span className={'badge '+statusColor(group)}><i/>{group}</span> <span>{cards.length}</span></h2>
+   {cards.length?cards.map(({file,total,complete})=><button type="button" className="kanban-card" key={file.id}
+    onClick={()=>openFile(file.id)}><strong>{file.name}</strong><small>{total?complete+' / '+total+' steps finished':'No workflow steps'}</small></button>):
+    <p className="empty">No files</p>}
+  </section>)}
+ </div>;
+}
+
 export function FileWorkflows({files,tasks,account,people,canManage,editable,locked,changeTask,openTask,
- addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,editTaskStatuses,editTaskTypes,orders,moveTask}) {
+ addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask}) {
  const [drag,setDrag]=useState(null);
  const [target,setTarget]=useState(null);
  function placement(event){
@@ -228,7 +256,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
    const linked=byId.get(id);
    return linked&&<button className="link" key={id} onClick={()=>openTask(id)}>{typeLabel(linked.type)} · {id}</button>;
   };
-  return <details className="file-workflow" key={file.id} open>
+  return <details className="file-workflow" id={'workflow-'+file.id} key={file.id} open>
    <summary><strong>{file.name}</strong><span>{leaves.filter(task=>statusGroup(statuses,task.status)==='Complete').length} / {leaves.length} complete</span></summary>
    {canManage&&<div className="file-workflow-actions">
     <button onClick={()=>editFile(file)} aria-label={'Rename file '+file.name}>Rename</button>
@@ -274,13 +302,13 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
        {parallel&&<small className="workflow-relation parallel-relation">Parallel · same prerequisites</small>}
        {!predecessors.length&&!parallel&&<small className="workflow-relation parallel-relation">No prerequisite</small>}
       </div></td>
-      <td>{canManage&&!task.parentTask?<TaskTypePicker label={'Task type · '+task.id} value={task.type} {...{taskTypes}} disabled={locked(task.id)} onEdit={editTaskTypes} onChange={type=>save({type})}/>:typeLabel(task.type)}</td>
+      <td>{canManage&&!task.parentTask?<TaskTypePicker label={'Task type · '+task.id} value={task.type} {...{taskTypes}} disabled={locked(task.id)} editor={taskTypeEditor} onChange={type=>save({type})}/>:typeLabel(task.type)}</td>
       <td>{parent?<span className="parent-note">Subtasks only</span>:canManage?<TaskSelect label={'Operator · '+task.id} value={task.person||''} options={[[ '', 'Unassigned' ],...people]}
        disabled={locked(task.id)} save={person=>save({person})}/>:task.person||'Unassigned'}</td>
       <td>{editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>
       <td>{canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
       <td>{parent?'—':formatMinutes(effort.minutes)}{!parent&&effort.source==='Historical'&&<small>Historical</small>}</td>
-      <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save} onEdit={editTaskStatuses}/>:statusBadge(task.status)}</td>
+      <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save} editor={taskStatusEditor}/>:statusBadge(task.status)}</td>
       <td><div className="workflow-actions">{taskAction(task)}{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}</div></td>
      </tr>;
     })}</tbody>

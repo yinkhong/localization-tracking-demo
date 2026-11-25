@@ -19,7 +19,13 @@ const labelFor=(event,zone,typeLabel)=>[
 export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeOff,zone,now,toInstant,typeLabel,navigate,archivedFiles}){
  const [window,setWindow]=useState(()=>({day,at:null,revision:0}));
  const [visibleDay,setVisibleDay]=useState(day);
- const [focused,setFocused]=useState('');
+ const [expanded,setExpanded]=useState(()=>new Set());
+ const toggleMember=name=>setExpanded(current=>{
+  const next=new Set(current);
+  if(next.has(name))next.delete(name);
+  else next.add(name);
+  return next;
+ });
  const [zoom,setZoom]=useState(0);
  const [viewport,setViewport]=useState([0,1000]);
  const anchor=useRef(null);
@@ -28,7 +34,6 @@ export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeO
  const msPerPixel=tickMinutes*60000/tickWidth;
  const pane=useRef(null);
  const lastDate=useRef(day);
- const member=people.includes(focused)?focused:'';
  const dates=useMemo(()=>Array.from({length:size+1},(_,index)=>{
   const key=dayOffset(window.day,index-buffer);
   return {key,start:Date.parse(toInstant(key+'T00:00',zone))};
@@ -93,17 +98,15 @@ export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeO
   if(index<=1||index>=size-2)jump(day,instant);
  }
  const showNow=now>=leftDay.start&&now<rightDay.start;
- const names=member?[member]:people;
- const windows=Object.fromEntries(names.map(name=>[name,shiftWindows(leftDay.key,rightDay.key,shifts[name],zones,toInstant,zone,timeOff[name])]));
- const rows=memberMetrics(names,teamGroups,events,windows,leftDay.start,rightDay.start,team);
+ const windows=Object.fromEntries(people.map(name=>[name,shiftWindows(leftDay.key,rightDay.key,shifts[name],zones,toInstant,zone,timeOff[name])]));
+ const rows=memberMetrics(people,teamGroups,events,windows,leftDay.start,rightDay.start,team);
  const focusedDay=dates.find(date=>date.key===visibleDay)??dates[buffer];
  const detailEnd=dates[dates.indexOf(focusedDay)+1].start;
  return <section className="panel team-timeline">
   <div className="panel-header filters">
-   <div><h2>{member?member+'’s work timeline':'Team work timeline'}</h2>
+   <div><h2>Team work timeline</h2>
     <p>{calendar(focusedDay.start,zone)} · {time(focusedDay.start,zone).split(' ').at(-1)}</p></div>
    <div className="timeline-controls">
-    {member&&<button onClick={()=>setFocused('')}>Back to team</button>}
     <button aria-label="Previous timeline day" onClick={()=>jump(dayOffset(visibleDay,-1))}>‹</button>
     <button aria-label="Next timeline day" onClick={()=>jump(dayOffset(visibleDay,1))}>›</button>
     <div className="timeline-zoom" aria-label="Horizontal zoom" title="Hold Shift and scroll to zoom">
@@ -115,7 +118,8 @@ export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeO
    </div>
   </div>
   <div className="timeline-legend">{Object.entries(kinds).map(([kind,label])=>
-   <span key={kind}><i className={'productivity-'+kind}/>{label}</span>)}</div>
+   <span key={kind}><i className={'productivity-'+kind}/>{label}</span>)}
+   <span><i className="timeline-off-hours"/>Outside shift</span></div>
   <div className="team-timeline-scroll" role="region" aria-label="Scrollable timeline" tabIndex="0" ref={pane} onScroll={onScroll}>
    <div className="team-timeline-grid" style={{'--timeline-name':labelWidth+'px','--timeline-tick':tickWidth+'px',width:labelWidth+chartWidth}}>
     {showNow&&<div className="team-now-line" aria-label={'Current time '+time(now,zone)}
@@ -133,9 +137,12 @@ export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeO
     </div>
     {rows.map(row=>{
      const absences=unavailableWindows(timeOff[row.name]??[],toInstant,leftDay.start,rightDay.start);
-     return <div className="team-timeline-row" key={row.name}>
-      <div className="team-timeline-name"><button className="link" aria-label={'Show timeline details for '+row.name}
-       onClick={()=>setFocused(row.name)}>{row.name}</button></div>
+     const isExpanded=expanded.has(row.name);
+     const detailId='member-timeline-'+encodeURIComponent(row.name);
+     return <React.Fragment key={row.name}><div className="team-timeline-row">
+      <div className="team-timeline-name"><button className="link" aria-expanded={isExpanded}
+       aria-controls={isExpanded?detailId:undefined} onClick={()=>toggleMember(row.name)}>
+       <span aria-hidden="true" className="member-toggle">{isExpanded?'▾':'▸'}</span>{row.name}</button></div>
       <div className="team-timeline-track">
        {absences.map((bar,index)=><div key={index} className="team-absence productivity-unavailable"
         style={{left:position(bar.start),width:position(bar.end)-position(bar.start)}} title={'Unavailable · '+bar.reason}>
@@ -149,17 +156,19 @@ export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeO
          style={{left:group.left,width:group.end-group.left}} title={caption} aria-label={caption}
          onClick={()=>{
           if(group.events.length===1&&task&&!archivedFiles.has(task.fileId))navigate('Task',task.id);
-          else setFocused(row.name);
+          else setExpanded(current=>new Set([...current,row.name]));
          }}/>;
        })}
       </div>
-     </div>;
+     </div>
+     {isExpanded&&<div id={detailId} className="team-member-details" style={{width:viewport[1]}}>
+      <TimelineDetails rows={row.rows} shifts={row.shifts} absences={absences}
+       from={focusedDay.start} through={detailEnd} {...{zone,typeLabel,navigate,archivedFiles}}/>
+     </div>}
+     </React.Fragment>;
     })}
    </div>
   </div>
-  {member&&<TimelineDetails rows={rows[0].rows} shifts={rows[0].shifts}
-   absences={unavailableWindows(timeOff[member]??[],toInstant,focusedDay.start,detailEnd)}
-   from={focusedDay.start} through={detailEnd} {...{zone,typeLabel,navigate,archivedFiles}}/>}
  </section>;
 }
 
@@ -173,8 +182,9 @@ function compactEvents(events,position,chartWidth){
  const groups=[];
  for(const kind of ['plannedBreak','scheduled','actual','actualBreak','completed']){
   const bars=events.filter(event=>event.kind===kind).map(event=>{
-   const left=Math.min(position(event.start),chartWidth-12);
-   return {kind,left,end:Math.max(left+12,position(event.end)),events:[event]};
+   const minimum=kind==='plannedBreak'||kind==='actualBreak'?12:22;
+   const left=Math.min(position(event.start),chartWidth-minimum);
+   return {kind,left,end:Math.max(left+minimum,position(event.end)),events:[event]};
   }).sort((a,b)=>a.left-b.left);
   let previous;
   for(const bar of bars){

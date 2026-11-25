@@ -1,4 +1,4 @@
-import React, {useEffect,useId,useRef,useState} from 'react';
+import React, {useId,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 
 export const groups = ['To-do','In progress','Complete'];
@@ -31,61 +31,72 @@ function labelColor(status){
  return statusColor(status.group);
 }
 
-export function StatusPicker({statuses,value,onChange,label,disabled=false,onEdit,editLabel='Edit status labels', groupOrder=groups, color=labelColor, placeholder=''}) {
+export function StatusPicker({statuses,value,onChange,label,disabled=false,editor,editLabel='Edit status labels', groupOrder=groups, color=labelColor, placeholder=''}) {
+ const [mode,setMode]=useState(null);
  const [position,setPosition]=useState(null);
  const trigger=useRef(null), menu=useRef(null);
  const id=useId();
  const current=statuses.find(status=>status.id===value);
- function close(focus=false){setPosition(null);if(focus)trigger.current?.focus();}
- useEffect(()=>{
-  if(!position)return;
-  (menu.current?.querySelector('[aria-checked="true"]')??menu.current?.querySelector('button'))?.focus();
+ const editing=mode==='edit';
+ function close(focus=false){setMode(null);if(focus)trigger.current?.focus();}
+ useLayoutEffect(()=>{
+  if(!mode)return;
+  const rect=trigger.current.getBoundingClientRect();
+  const below=window.innerHeight-rect.bottom;
+  const above=rect.top;
+  const upward=below<(editing?430:280)&&above>below;
+  const width=Math.min(editing?440:216,window.innerWidth-16);
+  setPosition({width,left:Math.max(8,Math.min(rect.left,window.innerWidth-width-8)),
+   maxHeight:Math.max(80,(upward?above:below)-12),
+   ...(upward?{bottom:window.innerHeight-rect.top+5}:{top:rect.bottom+5})});
+  function focusMenu(){
+   const selector=editing?'input, button':'[aria-checked="true"]:not(:disabled), button:not(:disabled)';
+   const selected=editing?null:menu.current?.querySelector('[aria-checked="true"]:not(:disabled)');
+   (selected??menu.current?.querySelector(selector))?.focus({preventScroll:true});
+  }
+  const focusFrame=requestAnimationFrame(focusMenu);
   function outside(event){if(!trigger.current?.contains(event.target)&&!menu.current?.contains(event.target))close();}
   function reposition(event){if(!menu.current?.contains(event.target))close();}
   document.addEventListener('pointerdown',outside);
   window.addEventListener('scroll',reposition,true);
   window.addEventListener('resize',reposition);
   return ()=>{
+   cancelAnimationFrame(focusFrame);
    document.removeEventListener('pointerdown',outside);
    window.removeEventListener('scroll',reposition,true);
    window.removeEventListener('resize',reposition);
   };
- },[position]);
- function toggle(){
-  if(position){close();return;}
-  const rect=trigger.current.getBoundingClientRect();
-  const below=window.innerHeight-rect.bottom;
-  const above=rect.top;
-  const upward=below<280&&above>below;
-  setPosition({left:Math.max(8,Math.min(rect.left,window.innerWidth-228)),
-   maxHeight:Math.max(80,(upward?above:below)-12),
-   ...(upward?{bottom:window.innerHeight-rect.top+5}:{top:rect.bottom+5})});
- }
+ },[mode]);
+ function toggle(){if(mode)close();else setMode('select');}
  const pill=status=><span className={'badge '+color(status)}><i/>{status?.label??(value||placeholder)}</span>;
  return <>
   <button ref={trigger} type="button" className="status-trigger" aria-label={label+': '+(current?.label??(value||placeholder))}
-   aria-haspopup="menu" aria-controls={position?id:undefined} aria-expanded={Boolean(position)} disabled={disabled}
-   onClick={toggle} onKeyDown={event=>{if(event.key==='ArrowDown'){event.preventDefault();toggle();}}}>
+   aria-haspopup={editing?'dialog':'menu'} aria-controls={mode?id:undefined} aria-expanded={Boolean(mode)} disabled={disabled&&!editor}
+   onClick={toggle} onKeyDown={event=>{if(event.key==='ArrowDown'&&!mode){event.preventDefault();toggle();}}}>
    {pill(current)}<span className="select-chevron" aria-hidden="true"/>
   </button>
-  {position&&createPortal(<div id={id} ref={menu} role="menu" aria-label={label} className="status-menu"
-   style={position} onBlur={event=>{if(event.relatedTarget&&!event.currentTarget.contains(event.relatedTarget)&&event.relatedTarget!==trigger.current)close();}}
+  {mode&&createPortal(<div id={id} ref={menu} role={editing?'dialog':'menu'} aria-label={editing?editLabel:label}
+   className={'status-menu'+(editing?' status-menu-editor':'')} style={position??{visibility:'hidden'}}
+   onSubmit={event=>event.stopPropagation()}
+   onBlur={event=>{if(event.relatedTarget&&!event.currentTarget.contains(event.relatedTarget)&&event.relatedTarget!==trigger.current)close();}}
    onKeyDown={event=>{
     if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close(true);return;}
-    if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
+    if(editing||!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
     event.preventDefault();
-    const options=[...menu.current.querySelectorAll('button')];
+    const options=[...menu.current.querySelectorAll('button:not(:disabled)')];
     const index=options.indexOf(document.activeElement);
     const next=event.key==='Home'?0:event.key==='End'?options.length-1:
      (index+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;
     options[next]?.focus();
    }}>
-   {groupOrder.map(group=>[group,statuses.filter(status=>status.group===group)]).filter(([,items])=>items.length).map(([group,items])=>
-    <div className="status-menu-group" role="group" aria-label={group} key={group}><div className="status-group-title">{group}</div>
-     {items.map(status=><button type="button" role="menuitemradio" aria-checked={value===status.id} key={status.id}
-      onClick={()=>{close(true);onChange(status.id);}}>{pill(status)}</button>)}
-    </div>)}
-   {onEdit&&<button type="button" role="menuitem" onClick={()=>{close();onEdit();}} >{editLabel}</button>}
+   {editing?<>{editor}<button type="button" className="catalog-done" onClick={()=>setMode('select')}>Done</button></>:<>
+    {groupOrder.map(group=>[group,statuses.filter(status=>status.group===group)]).filter(([,items])=>items.length).map(([group,items])=>
+     <div className="status-menu-group" role="group" aria-label={group} key={group}><div className="status-group-title">{group}</div>
+      {items.map(status=><button type="button" disabled={disabled} role="menuitemradio" aria-checked={value===status.id} key={status.id}
+       onClick={()=>{close(true);onChange(status.id);}}>{pill(status)}</button>)}
+     </div>)}
+    {editor&&<button type="button" role="menuitem" onClick={()=>setMode('edit')}>{editLabel}</button>}
+   </>}
   </div>,document.body)}
  </>;
 }

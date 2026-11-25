@@ -38,6 +38,8 @@
 }
 .work-timer-task {font-size:1rem}
 .work-timer-meta {color:#596482; font-size:.77rem}
+.work-timer-warning {background:#fff0a8}
+.work-timer-alert {color:#624900; font-size:.8rem}
 .work-timer-bottom {
  display:flex;
  align-items:center;
