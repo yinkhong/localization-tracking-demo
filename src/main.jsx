@@ -12,6 +12,7 @@ import {Reporting} from './reporting';
 import {defaultTaskTypes,LabelCatalog,TaskTypeAdmin} from './task-types';
 import {moveWorkflowTask} from './workflow-order';
 import {defaultTeamGroups,TeamOrg} from './team-org';
+import {normalizeTeamGroups,teamMembers} from './team-memberships';
 import {Productivity,ShiftSettings} from './productivity';
 import {defaultShift,isCancelled} from './productivity-data';
 import {Breaks,CorrectTime,TodayBreaks} from './time-entry-ui';
@@ -28,9 +29,9 @@ const dataKey='localization-workspace-v1';
 function load(){
  try{
   const value=JSON.parse(localStorage.getItem(dataKey));
-  if(value?.requests&&value?.tasks&&value?.defects)return bootstrapDefects(bootstrapStatuses(bootstrapWorkflow(bootstrapTimeline(value,false))));
+  if(value?.requests&&value?.tasks&&value?.defects)return bootstrapDefects(bootstrapStatuses(bootstrapWorkflow(bootstrapTimeline({...value,teamGroups:normalizeTeamGroups(value.teamGroups??defaultTeamGroups)},false))));
  }catch{}
- return bootstrapDefects(bootstrapStatuses(bootstrapWorkflow(bootstrapTimeline({requests:demoRequests,tasks:demoTasks,defects:demoDefects,zone:'Pacific',active:null},true))));
+ return bootstrapDefects(bootstrapStatuses(bootstrapWorkflow(bootstrapTimeline({requests:demoRequests,tasks:demoTasks,defects:demoDefects,teamGroups:defaultTeamGroups,zone:'Pacific',active:null},true))));
 }
 function App(){
  const [state,setState]=useState(load),[view,setView]=useState(()=>state.profiles[state.profile].role==='Operator'?'My work':'Overview'),[record,setRecord]=useState(''),[query,setQuery]=useState(''),[filter,setFilter]=useState('All'),[dialog,setDialog]=useState(null),[notice,setNotice]=useState(''),[workflowError,setWorkflowError]=useState(''),[now,setNow]=useState(Date.now()),[mode,setMode]=useState('Table'),[projectTab,setProjectTab]=useState('Tasks'),[adminSection,setAdminSection]=useState('');
@@ -58,7 +59,7 @@ function App(){
  const canSeeResources = Boolean(timelineAccess[role]);
  const people = Object.keys(profiles);
  const shiftEditors=role==='Manager'?people:role==='Team lead'?
-  [...new Set(teamGroups.filter(group=>group.lead===profile).flatMap(group=>group.members))]:[];
+  [...new Set(teamGroups.filter(group=>group.lead===profile).flatMap(group=>group.kind==='team'?teamMembers(teamGroups,group.team):group.members))]:[];
  const accountLabel=id=>accounts.find(account=>account.id===id)?.label??id;
  useEffect(()=>{try{localStorage.setItem(dataKey,JSON.stringify(state));}catch{setNotice('Browser storage is full. These changes are available for this session.');}},[state]);
  useEffect(()=>{
@@ -473,7 +474,7 @@ function App(){
   setState(s=>({...s,shifts:{...s.shifts,[name]:shift}}));setNotice('Shift saved');
  }}/>}
  <TeamOrg groups={teamGroups} profiles={profiles} editable={role==='Manager'}
-  save={next=>setState(s=>({...s,teamGroups:next}))}/></>}
+  save={change=>setState(s=>s.profiles[s.profile].role==='Manager'?{...s,teamGroups:change(s.teamGroups??defaultTeamGroups)}:s)}/></>}
  {view==='Admin'&&role==='Manager'&&<>
  <LabelCatalog items={accounts} title="Account labels" id="account-labels" itemName="account"
   save={next=>setState(s=>({...s,accounts:next}))}/>

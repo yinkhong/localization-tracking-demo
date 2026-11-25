@@ -126,7 +126,7 @@ export function ResourceTimeline({tasks, active, now, zone, date, navigate, toIn
  const dayEnd=followingDay && Date.parse(toInstant(followingDay+'T00:00',zone));
  const dayLength=dayEnd-dayStart;
  const entries=timelineItems(tasks,active,now,!person,statuses);
- const members = person ? [{name:'',team:'',members:[person]}] : roster.filter(g => team==='All teams' || g.team===team);
+ const members = person ? [{name:'',team:'',members:[person]}] : roster.filter(g => (team==='All teams' || g.team===team) && (g.kind!=='team'||g.members.length));
  const dayEntries=entries.filter(e => e.startedAt < dayEnd && (e.end > dayStart || e.startedAt >= dayStart));
  return <section className="panel resource">
   <div className="panel-header filters"><div><h2>{person ? 'Work timeline' : 'Team resources'}</h2>

@@ -314,3 +314,35 @@ button.team-event:hover,button.team-event:focus-visible { outline:2px solid #172
 .timer-preference { display:flex; align-items:start; gap:10px; padding:0 17px 14px; }
 .timer-preference small { display:block; margin-top:4px; }
 @media(max-width:650px) { .break-booking-fields { grid-template-columns:minmax(0,1fr); } }
+
+.team-filters,.team-selection,.team-pager,.team-assignment-title {display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px}
+.team-filters {padding:0 16px 14px; align-items:end}
+.team-filters label,.team-qualification {display:grid; gap:4px; font-size:.8rem; font-weight:650}
+.team-filters input,.team-filters select {max-width:100%; min-width:135px}
+.team-filters label {max-width:100%}
+.team-selection {padding:10px 16px; background:#f2efff; border-block:1px solid var(--line); font-size:.84rem}
+.team-pager {padding:9px 16px; color:var(--muted); font-size:.8rem}
+.team-members-table th[scope=row] {color:#17203c; font-size:.85rem; text-transform:none; letter-spacing:normal}
+.team-members-table th[scope=row] small {display:block; color:var(--muted); font-weight:400}
+.team-members-table td .badge {margin:2px 6px 2px 0; white-space:normal}
+.team-chart-layout {display:grid; grid-template-columns:minmax(190px,260px) minmax(0,1fr); gap:16px; padding:0 16px 16px}
+.team-tree details {border:1px solid var(--line); border-radius:8px; background:#f8f9fe; margin-bottom:8px}
+.team-tree summary {cursor:pointer; padding:9px 11px; font-size:.85rem}
+.team-tree summary span {display:block; padding:4px 0 0 14px; color:var(--muted); font-size:.75rem}
+.team-tree-children {display:grid; gap:6px; margin:0 9px 10px 16px; padding-inline-start:10px; border-inline-start:2px solid #cdc6f1}
+.team-tree-children button {text-align:start; white-space:normal}
+.team-tree-children button small {display:block; font-size:.72rem; color:var(--muted); margin-top:3px}
+.team-tree-children button[aria-pressed=true],.team-picker button[aria-pressed=true] {background:#eee9ff; border-color:#8876cb; color:#3a277c}
+.team-roster {min-width:0; border:1px solid var(--line); border-radius:9px; overflow:hidden}
+.team-assignment-title {justify-content:space-between; margin-bottom:12px}
+.team-assignment-title h3 {margin:0; font-size:1rem}
+.team-roster .team-assignment-title {padding:12px 14px 0}
+.team-assignment-panel {margin:10px 16px 16px; padding:14px; border:1px solid #d8cef4; border-radius:9px; background:#faf8ff}
+.team-assignment-panel .team-filters,.team-assignment-panel .team-pager {padding-inline:0}
+.team-qualification select {width:max-content; max-width:100%}
+.team-members-table .team-qualification {font-size:0}
+.team-members-table .team-qualification select {font-size:.8rem}
+.team-person-assignments>div {display:flex; align-items:end; flex-wrap:wrap; gap:8px; margin-bottom:9px; padding-bottom:9px; border-bottom:1px solid var(--line)}
+.team-person-assignments strong {min-width:175px; align-self:center; font-size:.86rem}
+.team-picker {display:flex; flex-wrap:wrap; gap:6px}
+@media(max-width:750px) { .team-chart-layout {grid-template-columns:minmax(0,1fr)} }
