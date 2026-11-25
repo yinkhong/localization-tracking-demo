@@ -27,7 +27,7 @@ export function useFloatingTimer(timer,clock){
   try{
    const pictureInPicture=window.documentPictureInPicture;
    if(pictureInPicture){
-    const popup=await pictureInPicture.requestWindow({width:330,height:title==='Task timer'?245:200});
+    const popup=await pictureInPicture.requestWindow({width:280,height:title==='Task timer'?155:125});
     if(request.current!==entry){popup.close();return;}
     entry.popup=popup;
     const document=popup.document;
@@ -66,10 +66,8 @@ function TimerCard({timer,clock,dismiss,timerWindow}){
  },[timerWindow]);
  const seconds=timer.spent+Math.max(0,Math.floor((now-timer.started)/1000));
  const overdue=Number.isFinite(timer.deadline)&&now>timer.deadline;
- const pastPlan=Number.isFinite(timer.plannedFinish)&&now>timer.plannedFinish||
-  Number.isFinite(timer.plannedSeconds)&&seconds>timer.plannedSeconds;
- const warning=overdue?'Past deadline':pastPlan?'Past planned time':'';
- return <section className={'work-timer-card'+(dismiss?' work-timer-in-page':'')+(warning?' work-timer-warning':'')}
+ const pastPlan=Number.isFinite(timer.plannedSeconds)&&seconds>timer.plannedSeconds;
+ return <section className={'work-timer-card'+(dismiss?' work-timer-in-page':'')}
   aria-label={'Floating '+timer.title.toLowerCase()}>
   <style>{styles}</style>
   <header className="work-timer-header">
@@ -77,13 +75,12 @@ function TimerCard({timer,clock,dismiss,timerWindow}){
    {dismiss&&<button type="button" onClick={dismiss} className="work-timer-dismiss" aria-label="Hide floating timer">×</button>}
   </header>
   <strong className="work-timer-task" title={timer.name}>{timer.name}</strong>
-  {timer.detail&&<div className="work-timer-meta">{timer.detail}</div>}
-  {timer.deadlineLabel&&<div className="work-timer-meta">Deadline <strong>{timer.deadlineLabel}</strong></div>}
-  {timer.plannedFinishLabel&&<div className="work-timer-meta">Planned finish <strong>{timer.plannedFinishLabel}</strong></div>}
-  {timer.plannedSeconds!=null&&<div className="work-timer-meta">Planned effort <strong>{clock(timer.plannedSeconds)}</strong></div>}
-  {warning&&<strong className="work-timer-alert" role="status">{warning}</strong>}
+  {timer.deadlineLabel&&<div className="work-timer-meta" title={timer.detail}>
+   Due: <span className={overdue?'work-timer-over-limit':undefined}>{timer.deadlineLabel}</span>
+  </div>}
   <div className="work-timer-bottom">
-   <output aria-label={timer.elapsedLabel} aria-live="off">{clock(seconds)}</output>
+   <output className={pastPlan?'work-timer-over-limit':undefined} aria-label={timer.elapsedLabel} aria-live="off"
+    title={timer.plannedSeconds!=null?'Planned effort: '+clock(timer.plannedSeconds):undefined}>{clock(seconds)}</output>
    <div className="work-timer-actions">
     {timer.pause&&<button type="button" onClick={timer.pause}>Pause</button>}
     <button type="button" className="work-timer-complete" onClick={timer.finish}>{timer.finishLabel}</button>

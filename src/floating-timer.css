@@ -7,9 +7,9 @@
  font:14px/1.35 system-ui,sans-serif;
  color:#17203c;
  background:#fff;
- padding:14px;
+ padding:10px;
  display:grid;
- gap:5px;
+ gap:3px;
  min-height:100vh;
  align-content:center;
 }
@@ -17,7 +17,7 @@
  position:fixed;
  z-index:45;
  inset:auto 16px 16px auto;
- width:min(330px,calc(100vw - 32px));
+ width:min(280px,calc(100vw - 32px));
  min-height:auto;
  border:1px solid #dce0ef;
  border-radius:12px;
@@ -38,20 +38,19 @@
 }
 .work-timer-task {font-size:1rem}
 .work-timer-meta {color:#596482; font-size:.77rem}
-.work-timer-warning {background:#fff0a8}
-.work-timer-alert {color:#624900; font-size:.8rem}
+.work-timer-card .work-timer-over-limit {color:#b4232f; font-weight:850}
 .work-timer-bottom {
  display:flex;
  align-items:center;
  justify-content:space-between;
  flex-wrap:wrap;
  gap:8px;
- margin-top:8px;
+ margin-top:5px;
 }
 .work-timer-bottom output {
  font-variant-numeric:tabular-nums;
  font-size:1.35rem;
- font-weight:750;
+ font-weight:650;
 }
 .work-timer-actions {display:flex; gap:5px}
 .work-timer-card button {

@@ -103,13 +103,12 @@ function App(){
  const taskTimerKey=(id,started)=>'task:'+profile+':'+id+':'+started;
  const breakTimerKey=id=>'break:'+profile+':'+id;
  const taskDeadline=activeTask?.due?new Date(activeTask.due).getTime():null;
- const plannedFinish=activeTask?.scheduledEnd??null;
  const plannedMinutes=activeTask?estimate(requestOf(activeTask.request)?.account,activeTask.type,activeTask.pages).minutes:null;
  const floating=useFloatingTimer(activeTask?{
   key:taskTimerKey(activeTask.id,active.started),title:'Task timer',name:activeTask.file,
   detail:typeLabel(activeTask.type)+' · '+activeTask.id,started:active.started,spent:activeTask.spent??0,
-  deadline:taskDeadline,deadlineLabel:Number.isFinite(taskDeadline)?date(taskDeadline):'Not set',
-  plannedFinish,plannedFinishLabel:Number.isFinite(plannedFinish)&&plannedFinish!==taskDeadline?date(plannedFinish):null,
+  deadline:taskDeadline,deadlineLabel:Number.isFinite(taskDeadline)?
+   formatZoned(taskDeadline,zone,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).replace(/\s+(AM|PM)/,'$1'):'Not set',
   plannedSeconds:Number.isFinite(plannedMinutes)?Math.round(plannedMinutes*60):null,
   elapsedLabel:'Elapsed task time',pause:()=>stop(),finish:()=>stop(true),finishLabel:'Complete',
  }:activeBreak?{
@@ -120,18 +119,26 @@ function App(){
  const taskBlocked=(task,all=tasks)=>blockedTask(task,all,statuses);
  const stats=[['Open requests',requests.filter(r=>statusGroup(requestStatuses,r.status)!=='Complete').length,'Across all sample accounts','▤'],['At risk',requests.filter(r=>r.risk==='At risk').length,'Needs PM attention','!'],['Ready to assign',tasks.filter(t=>!parents.has(t.id)&&phase(t.status)==='To-do'&&!taskBlocked(t)&&!t.person).length,'Unassigned operations','＋'],['Defects in review',defects.filter(d=>d.status!=='Closed').length,'Awaiting a decision','◇']];
  const editable=t=>canManage||t?.person===profile;
- function moveTask(file,source,target,placement){
+ function moveTask(file,source,target,placement,confirmed=false){
   if(!canManage)return;
   const timestamp=Date.now();
   const result=moveWorkflowTask(tasks,file,workflowOrders[file],source,target,placement,statuses,timers,timestamp);
   if(result.error){setWorkflowError(result.error);return;}
   if(!result.order)return;
   setWorkflowError('');
+  const before=taskOf(source);
+  const moved=result.tasks.find(item=>item.id===source);
+  const parent=taskOf(moved.parentTask);
+  if(!confirmed&&parent&&before.parentTask!==parent.id&&before.type!==parent.type){
+   setDialog({kind:'confirm-task-move',file,source,target,placement,from:before.type,to:parent.type,parent:parent.id});
+   return;
+  }
   commit('Moved workflow task',(s,at)=>{
    const updated=moveWorkflowTask(s.tasks,file,s.workflowOrders?.[file],source,target,placement,s.statuses,Object.values(s.activeTimers),at);
    return updated.error||!updated.order?s:{...s,tasks:updated.tasks,workflowOrders:{...s.workflowOrders,[file]:updated.order}};
   },timestamp);
-  setNotice('Workflow position saved');
+  if(confirmed)setDialog(null);
+  setNotice(placement==='sequence'?'Task dependency saved':'Workflow position saved');
  }
  function saveRelationships(changes){
   const result=updateRelationships(tasks,task.id,changes,statuses,timers,Date.now());
@@ -577,7 +584,7 @@ function App(){
  </div>
  {notice&&<div className="toast" role="status">{notice}</div>}
  {dialog&&dialog.kind!=='defect'&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setDialog(null);}}><div className={'modal '+(dialog.kind==='rank'?'wide':'')} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
- <div className="dialog-head"><h2 id="dialog-title">{{request:'New request',rank:'Ranked operator suggestions',timer:'Another timer is running',newfile:'Add file',renamefile:'Rename file',deletefile:'Delete file',newtask:dialog.parent?'Add subtask':'Add file task'}[dialog.kind]}</h2><button aria-label="Close dialog" onClick={()=>setDialog(null)}>×</button></div>
+ <div className="dialog-head"><h2 id="dialog-title">{{request:'New request',rank:'Ranked operator suggestions',timer:'Another timer is running',newfile:'Add file',renamefile:'Rename file',deletefile:'Delete file','confirm-task-move':'Change task type and move?',newtask:dialog.parent?'Add subtask':'Add file task'}[dialog.kind]}</h2><button aria-label="Close dialog" onClick={()=>setDialog(null)}>×</button></div>
  {dialog.kind==='request'&&<RequestForm zone={zone} {...{taskTypes,accounts,accountEditor}} save={values=>{
   const id='RQ-'+(Math.max(1045,...requests.map(r=>Number(r.id.split('-')[1])))+1);
   commit('Created request',(s,timestamp)=>({...s,requests:[{...values,id,status:'Ready',risk:'Unscheduled',
@@ -607,6 +614,13 @@ function App(){
   <p>Delete <strong>{dialog.file.name}</strong> and its workflow from this request? You can restore it from Deleted files.</p>
   <div className="actions"><button onClick={()=>setDialog(null)}>Cancel</button>
    <button className="file-danger" onClick={()=>updateFile(dialog.file,'delete')}>Delete file</button></div>
+ </>}
+ {dialog.kind==='confirm-task-move'&&<>
+  <p role="alert"><strong>{dialog.source}</strong> is {typeLabel(dialog.from)}. Moving it under <strong>{dialog.parent}</strong> will change
+   its type to <strong>{typeLabel(dialog.to)}</strong> and apply that type to any subtasks it contains.</p>
+  {workflowError&&<p className="error" role="alert">{workflowError}</p>}
+  <div className="actions"><button onClick={()=>setDialog(null)}>Cancel</button>
+   <button className="primary" onClick={()=>moveTask(dialog.file,dialog.source,dialog.target,dialog.placement,true)}>Change type and move</button></div>
  </>}
  {dialog.kind==='newtask'&&<form onSubmit={e=>{
   e.preventDefault();

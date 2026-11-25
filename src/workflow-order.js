@@ -22,10 +22,11 @@ export function moveWorkflowTask(tasks,file,order,source,target,placement,status
  const anchor=tasks.find(task=>task.id===target&&task.fileId===file);
  if(!item||placement!=='root'&&(!anchor||item===anchor))return {};
  const parent=placement==='root'?'':placement==='inside'?anchor.id:anchor.parentTask||'';
+ const predecessor=placement==='sequence'?anchor.id:item.dependsOn||'';
  let updated=tasks;
- if(parent!==(item.parentTask||'')){
+ if(parent!==(item.parentTask||'')||predecessor!==(item.dependsOn||'')){
   const result=updateRelationships(tasks,item.id,{fileId:file,file:item.file,parentTask:parent,
-   dependsOn:item.dependsOn||'',children:tasks.filter(task=>task.parentTask===item.id).map(task=>task.id)},statuses,timers,timestamp);
+   dependsOn:predecessor,children:tasks.filter(task=>task.parentTask===item.id).map(task=>task.id)},statuses,timers,timestamp);
   if(result.error)return result;
   updated=result.tasks;
  }
@@ -34,6 +35,6 @@ export function moveWorkflowTask(tasks,file,order,source,target,placement,status
   const priority=workflowOrder(rows,order).filter(task=>task.id!==item.id).map(task=>task.id);
   return {tasks:updated,order:workflowOrder(rows,[...priority,item.id]).map(task=>task.id)};
  }
- const result=reorderWorkflowRows(rows,order,source,target,placement==='after');
+ const result=reorderWorkflowRows(rows,order,source,target,placement==='after'||placement==='sequence');
  return result.error?result:{...result,tasks:updated};
 }

@@ -235,10 +235,11 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
  addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask}) {
  const [drag,setDrag]=useState(null);
  const [target,setTarget]=useState(null);
+ const draggedTask=drag&&tasks.find(task=>task.id===drag.id);
  function placement(event){
   const rect=event.currentTarget.getBoundingClientRect();
   const fraction=(event.clientY-rect.top)/rect.height;
-  return fraction<.27?'before':fraction>.73?'after':'inside';
+  return fraction<.27?'sequence':fraction>.73?'after':'inside';
  }
  function drop(file,event,id,mode=placement(event)){
   event.preventDefault();
@@ -278,13 +279,15 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      }
      const save=fields=>changeTask(task.id,fields);
      const effort=estimate(account,task.type,task.pages);
+     const parentTask=byId.get(task.parentTask);
+     const targetMode=target?.id===task.id?target.mode:null;
      const siblings=rows.filter(row=>(row.parentTask||null)===(task.parentTask||null));
      const index=siblings.indexOf(task);
-     return <tr key={task.id} className={(task.parentTask?'workflow-subtask ':'')+(target?.id===task.id?'drag-'+target.mode:'')}
-      onDragOver={event=>{if(drag?.file===file.id){event.preventDefault();setTarget({id:task.id,mode:placement(event)});}}}
+     return <tr key={task.id} className={(task.parentTask?'workflow-subtask ':'')+(targetMode?'drag-'+targetMode:'')}
+      onDragOver={event=>{if(drag?.file===file.id&&drag.id!==task.id){event.preventDefault();const mode=placement(event);if(target?.id!==task.id||target.mode!==mode)setTarget({id:task.id,mode});}}}
       onDrop={event=>drop(file,event,task.id)}>
       <td style={{'--workflow-indent':Math.min(depth,5)*18+'px'}}><div className="workflow-operation" style={{marginInlineStart:Math.min(depth,5)*18}} data-movable={canManage&&items.length>1}>
-       {canManage&&(items.length>1||task.parentTask)&&<button type="button" className="drag-handle" draggable title="Drop in the center to nest, or at the edge to reorder. Arrow keys reorder. Left promotes to top level."
+       {canManage&&(items.length>1||task.parentTask)&&<button type="button" className="drag-handle" draggable title="Drop at the top to start after this task, in the center to nest, or at the bottom to reorder. Up and Down reorder. Left promotes to top level."
         aria-label={'Reorder '+task.id} onDragStart={event=>{
          event.dataTransfer.setData('text/plain',task.id);event.dataTransfer.effectAllowed='move';setDrag({file:file.id,id:task.id});
         }} onDragEnd={()=>{setDrag(null);setTarget(null);}} onKeyDown={event=>{
@@ -296,7 +299,15 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
         }}>⠿</button>}
        <button className="link record" onClick={()=>openTask(task.id)}>{typeLabel(task.type)} <span aria-hidden="true">↗</span></button>
        <small>{parent?'Parent task · ':''}{task.id}</small>
-       {depth>0&&<small className="workflow-relation child-relation"><span>Subtask of</span>{linkedTask(task.parentTask)}</small>}
+       {parentTask&&<small className="workflow-relation child-relation">
+        <button type="button" className="link" onClick={()=>openTask(parentTask.id)}>
+         <span aria-hidden="true">↳ </span>{typeLabel(parentTask.type)} - {parentTask.id}
+        </button></small>}
+       {targetMode&&<span className={'workflow-drop-hint workflow-drop-'+targetMode}>
+        {targetMode==='sequence'?'Start after '+task.id:targetMode==='inside'?'Make a subtask of '+task.id:'Reorder below '+task.id}
+        {targetMode==='sequence'&&draggedTask?.dependsOn&&draggedTask.dependsOn!==task.id&&
+         ' · replaces '+draggedTask.dependsOn}
+       </span>}
        {predecessors.length>0&&<small className={'workflow-relation dependency-relation '+(blocked?'workflow-blocked':'')}>
         <span>{blocked?'Waiting for':'After'}</span>{predecessors.map(linkedTask)}</small>}
        {parallel&&<small className="workflow-relation parallel-relation">Parallel · same prerequisites</small>}
