@@ -38,3 +38,46 @@ export function moveWorkflowTask(tasks,file,order,source,target,placement,status
  const result=reorderWorkflowRows(rows,order,source,target,placement==='after'||placement==='sequence');
  return result.error?result:{...result,tasks:updated};
 }
+
+export function removeWorkflowTasks(state,ids,timestamp,actor){
+ const selected=new Set(ids);
+ const archivedFiles=new Set(state.workflowFiles.filter(file=>file.archivedAt).map(file=>file.id));
+ const removed=state.tasks.filter(task=>selected.has(task.id)&&!archivedFiles.has(task.fileId));
+ if(!removed.length)return state;
+ const removedIds=new Set(removed.map(task=>task.id));
+ if(Object.values(state.activeTimers).some(timer=>removedIds.has(timer.id)))return state;
+ const tasks=state.tasks.filter(task=>!removedIds.has(task.id)).map(task=>{
+  const losesParent=removedIds.has(task.parentTask);
+  const losesPrerequisite=removedIds.has(task.dependsOn);
+  if(!losesParent&&!losesPrerequisite)return task;
+  return {...task,parentTask:losesParent?null:task.parentTask,dependsOn:losesPrerequisite?null:task.dependsOn,modifiedAt:timestamp};
+ });
+ const workflowOrders=Object.fromEntries(Object.entries(state.workflowOrders??{}).map(([file,order])=>
+  [file,order.filter(id=>!removedIds.has(id))]));
+ const deletedTasks=[...(state.deletedTasks??[]),...removed.map(task=>({...task,deletedAt:timestamp,modifiedAt:timestamp,modifiedBy:actor}))];
+ return {...state,tasks,workflowOrders,deletedTasks};
+}
+
+export function prerequisiteGroups(rows){
+ const members=new Map();
+ rows.forEach((task,index)=>{
+  if(!task.dependsOn)return;
+  const group=members.get(task.dependsOn)??[];
+  group.push(index);
+  members.set(task.dependsOn,group);
+ });
+ const segments=rows.map(()=>[]);
+ const laneEnds=[];
+ for(const [id,indices] of [...members].sort(([,a],[,b])=>a[0]-b[0])){
+  if(indices.length<2)continue;
+  const first=indices[0],last=indices.at(-1);
+  const freeLane=laneEnds.findIndex(end=>end<first);
+  const lane=freeLane<0?laneEnds.length:freeLane;
+  laneEnds[lane]=last;
+  const branchRows=new Set(indices);
+  for(let index=first;index<=last;index++){
+   segments[index].push({id,lane,first:index===first,last:index===last,branch:branchRows.has(index)});
+  }
+ }
+ return {segments,lanes:laneEnds.length};
+}

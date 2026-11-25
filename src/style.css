@@ -64,8 +64,6 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .file-workflow>summary,.task-activity>summary {
  padding:14px 17px; cursor:pointer; color:#27324f; font-weight:700; font-size:.9rem;
 }
-.file-workflow>summary strong { margin-left:5px; }
-.file-workflow>summary span { margin-left:14px; color:var(--muted); font-size:.8rem; font-weight:550; }
 .file-workflow>summary:hover,.task-activity>summary:hover { background:#f6f6ff; }
 .file-workflow>summary:focus-visible,.task-activity>summary:focus-visible { outline:2px solid var(--accent); outline-offset:-3px; }
 .workflow-table td,.workflow-table th { padding:8px 10px; }
@@ -87,7 +85,7 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .status-settings { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; padding:0 17px 17px; }
 .status-settings section { border:1px solid var(--line); border-radius:10px; padding:13px; }
 .status-settings h3 { margin:0 0 10px; font-size:.92rem; }
-.status-settings form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px; margin-top:7px; }
+.status-settings form { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:7px; margin-top:7px; }
 .summary [aria-label="Request status"] { display:block; margin-top:6px; }
 .parent-note { color:var(--muted); font-size:.84rem; }
 .rca-form,.rca-document { padding:clamp(16px,3vw,36px); }
@@ -215,17 +213,15 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .org-members {display:flex; flex-wrap:wrap; gap:7px 12px}
 .org-members label {display:flex; align-items:center; gap:5px; font-size:.83rem}
 
-.file-workflow-actions { display:flex; justify-content:flex-end; gap:6px; padding:7px 12px; border-top:1px solid var(--line); }
-.file-workflow-actions button { padding:3px 9px; font-size:.75rem; }
 .file-danger { color:#9d302e; border-color:#edc9c7; background:#fff5f4; }
 .removed-files { padding:12px 16px; }
 .removed-files summary { cursor:pointer; font-weight:650; }
 .removed-files div { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:8px; }
-.workflow-table td:first-child { position:relative; }
+.workflow-table td.workflow-operation-cell { position:relative; padding-inline-start:calc(10px + var(--prerequisite-gutter)); }
 .workflow-operation[data-movable="true"] { position:static; padding-inline-start:23px; }
 .workflow-subtask .workflow-operation[data-movable="true"] { padding-inline-start:23px; }
 .workflow-operation .drag-handle {
- position:absolute; inset-block:5px; inset-inline-start:calc(7px + var(--workflow-indent,0px)); width:17px; margin:0; padding:0;
+ position:absolute; inset-block:5px; inset-inline-start:calc(7px + var(--prerequisite-gutter) + var(--workflow-indent,0px)); width:17px; margin:0; padding:0;
  user-select:none; display:grid; place-items:center;
 }
 .workflow-operation[data-movable="true"] > .record { display:block; text-align:start; }
@@ -369,3 +365,38 @@ button.team-event:hover,button.team-event:focus-visible { outline:2px solid #172
 .workflow-drop-sequence { inset-block-start:1px; }
 .workflow-drop-inside { inset-block-start:50%; transform:translateY(-50%); }
 .workflow-drop-after { inset-block-end:1px; }
+
+.file-workflow>summary { display:flex; align-items:center; gap:7px; padding-block:9px; }
+.file-workflow>summary::-webkit-details-marker { display:none; }
+.file-workflow>summary::before { content:'▸'; color:var(--muted); }
+.file-workflow[open]>summary::before { content:'▾'; }
+.file-workflow>summary strong { overflow-wrap:anywhere; }
+.file-workflow>summary .file-progress { color:var(--muted); font-size:.8rem; font-weight:550; margin-inline-start:5px; white-space:nowrap; }
+.file-workflow>summary button { padding:3px 8px; font-size:.76rem; flex-shrink:0; }
+.file-workflow>summary .file-rename { border-color:transparent; background:transparent; font-size:.95rem; }
+.file-workflow>summary .file-rename:hover { background:#ecebff; }
+.file-workflow>summary .file-delete { margin-inline-start:auto; }
+.workflow-bulk { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:7px 12px; border-block-start:1px solid var(--line); }
+.workflow-bulk span { margin-inline-end:auto; color:var(--muted); font-size:.83rem; }
+.workflow-bulk button { padding:4px 8px; font-size:.78rem; }
+.workflow-table .workflow-selection { position:relative; width:33px; min-width:33px; padding:0; border:0; background:white; }
+.workflow-selection label { position:absolute; inset:0; display:grid; place-items:center; cursor:pointer; }
+.workflow-table .workflow-selection input { width:15px; height:15px; margin:0; accent-color:var(--accent); opacity:0; }
+.workflow-table tr:hover .workflow-selection input,.workflow-selection:focus-within input,
+.workflow-table .workflow-selection input[data-visible=true] { opacity:1; }
+.workflow-table tr[data-selected=true] td:not(.workflow-selection) { background:#f1efff; }
+@media(hover:none) { .workflow-table .workflow-selection input { opacity:1; } }
+.workflow-prerequisite-line { position:absolute; inset-block:0; inset-inline-start:calc(7px + var(--prerequisite-lane));
+ width:8px; border-inline-start:1px solid #9e92c4; pointer-events:none; }
+.workflow-prerequisite-line[data-first=true] { inset-block-start:50%; border-start-start-radius:3px; }
+.workflow-prerequisite-line[data-last=true] { inset-block-end:50%; border-end-start-radius:3px; }
+.workflow-prerequisite-line[data-branch=true]::after { content:''; position:absolute; inset-inline-start:0; width:6px; border-block-start:1px solid #9e92c4; inset-block-start:50%; }
+.workflow-prerequisite-line[data-first=true]::after { inset-block-start:0; }
+.workflow-prerequisite-line[data-last=true]::after { inset-block-start:auto; inset-block-end:0; }
+.workflow-dependency { display:inline-flex; align-items:center; gap:3px; }
+.workflow-dependency .dependency-remove { font-size:.88rem; line-height:1; padding:1px 4px; border:0; background:transparent; color:#873137; }
+.workflow-dependency .dependency-remove:hover { background:#fce7e8; }
+.catalog-delete-confirm { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:8px 12px; margin:0 12px 10px; background:#fff5f4; border-radius:6px; }
+.catalog-delete-confirm p { flex:1; margin:0; }
+.status-menu-editor .catalog-delete-confirm button { width:auto; border:1px solid var(--line); }
+.status-menu-editor .file-danger { color:#9d302e; }

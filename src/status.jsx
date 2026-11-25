@@ -101,8 +101,16 @@ export function StatusPicker({statuses,value,onChange,label,disabled=false,edito
  </>;
 }
 
-export function StatusAdmin({statuses,save,title,id}) {
+export function StatusAdmin({statuses,save,deleteReason,title,id}) {
  const [error,setError]=useState('');
+ const [pendingDelete,setPendingDelete]=useState(null);
+ function remove(id){
+  const reason=deleteReason?.(id);
+  if(reason){setError(reason);return;}
+  setError('');
+  setPendingDelete(id);
+ }
+
  function update(event,id,group){
   event.preventDefault();
   const field=event.currentTarget.elements.label;
@@ -116,10 +124,20 @@ export function StatusAdmin({statuses,save,title,id}) {
  }
  return <section className="panel" id={id}><div className="panel-header"><h2>{title}</h2></div>
   {error&&<p className="note error" role="alert">{error}</p>}
+  {pendingDelete&&<div className="catalog-delete-confirm" role="group" aria-label="Confirm label deletion">
+   <p>Delete <strong>{statuses.find(item=>item.id===pendingDelete)?.label}</strong>?</p>
+   <button type="button" onClick={()=>setPendingDelete(null)}>Cancel</button>
+   <button type="button" className="file-danger" onClick={()=>{
+    const reason=deleteReason?.(pendingDelete);
+    if(reason){setError(reason);setPendingDelete(null);return;}
+    save(statuses.filter(item=>item.id!==pendingDelete));setPendingDelete(null);
+   }}>Delete label</button>
+  </div>}
   <div className="status-settings">{groups.map(group=><section key={group}><h3>{group}</h3>
    {statuses.filter(status=>status.group===group).map(status=><form key={status.id+status.label} onSubmit={e=>update(e,status.id,group)}>
     <input name="label" aria-label={status.label+' label'} required maxLength="32" defaultValue={status.label}/>
     <button>Rename</button>
+    <button type="button" className="file-danger" aria-label={'Delete '+status.label} onClick={()=>remove(status.id)}>Delete</button>
    </form>)}
    <form onSubmit={e=>update(e,null,group)}><input name="label" aria-label={'New '+group+' label'} required maxLength="32" placeholder="New label"/>
     <button>Add</button></form>

@@ -1,3 +1,4 @@
+import {prerequisiteGroups} from './workflow-order';
 import {blockedTask, dependencyIds, incompletePredecessors, isDependencyStatus, parentTaskIds, StatusPicker, statusColor, statusGroup, workflowOrder} from './status';
 import React, {useState} from 'react';
 import {zoneCode} from './time-zone';
@@ -111,6 +112,15 @@ export function withActivity(before, next, actor, timestamp, action) {
    entries.push({actor,timestamp,action:collection==='tasks'&&next.tasks.some(task=>task.parentTask===record.id)?'Updated parent rollup':unlocked?'Dependency unlocked':action,requestIds,taskIds,
     recordId:record.id,recordName:record.parentTask?'Subtask':recordNames[collection],
     label:record.title??record.file??record.name,changes});
+  }
+  if(collection==='tasks'){
+   const surviving=new Set(next.tasks.map(task=>task.id));
+   for(const record of previous.values()){
+    if(surviving.has(record.id))continue;
+    entries.push({actor,timestamp,action,requestIds:[record.request],taskIds:[record.id,record.parentTask].filter(Boolean),
+     recordId:record.id,recordName:record.parentTask?'Subtask':'Task',label:record.file,
+     changes:[{key:'archivedAt',from:null,to:timestamp}]});
+   }
   }
   if(touched.size)authored[collection]=next[collection].map(record=>touched.has(record.id)?{...record,modifiedBy:actor}:record);
  }
@@ -232,9 +242,17 @@ export function FileKanban({files,tasks,statuses,openFile}){
 }
 
 export function FileWorkflows({files,tasks,account,people,canManage,editable,locked,changeTask,openTask,
- addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask}) {
+ addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask,deleteTasks,removeDependency}) {
  const [drag,setDrag]=useState(null);
  const [target,setTarget]=useState(null);
+ const [selection,setSelection]=useState(()=>new Set());
+ function select(ids,checked){
+  setSelection(current=>{
+   const next=new Set(current);
+   for(const id of ids){if(checked)next.add(id);else next.delete(id);}
+   return next;
+  });
+ }
  const draggedTask=drag&&tasks.find(task=>task.id===drag.id);
  function placement(event){
   const rect=event.currentTarget.getBoundingClientRect();
@@ -252,20 +270,36 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
   const parents=parentTaskIds(items);
   const leaves=items.filter(task=>!parents.has(task.id));
   const rows=workflowOrder(items,orders[file.id]);
+  const {segments,lanes}=prerequisiteGroups(rows);
+  const ids=rows.map(task=>task.id);
+  const selected=ids.filter(id=>selection.has(id));
+  const allSelected=ids.length>0&&selected.length===ids.length;
   const byId=new Map(tasks.map(task=>[task.id,task]));
   const linkedTask=id=>{
    const linked=byId.get(id);
    return linked&&<button className="link" key={id} onClick={()=>openTask(id)}>{typeLabel(linked.type)} · {id}</button>;
   };
   return <details className="file-workflow" id={'workflow-'+file.id} key={file.id} open>
-   <summary><strong>{file.name}</strong><span>{leaves.filter(task=>statusGroup(statuses,task.status)==='Complete').length} / {leaves.length} complete</span></summary>
-   {canManage&&<div className="file-workflow-actions">
-    <button onClick={()=>editFile(file)} aria-label={'Rename file '+file.name}>Rename</button>
-    <button onClick={()=>deleteFile(file)} aria-label={'Delete file '+file.name}>Delete</button>
+   <summary>
+    <strong>{file.name}</strong>
+    {canManage&&<button type="button" className="file-rename" title="Rename file" aria-label={'Rename file '+file.name}
+     onClick={event=>{event.preventDefault();event.stopPropagation();editFile(file);}}>✎</button>}
+    <span className="file-progress">{leaves.filter(task=>statusGroup(statuses,task.status)==='Complete').length} / {leaves.length} complete</span>
+    {canManage&&<button type="button" className="file-delete file-danger" aria-label={'Delete file '+file.name}
+     onClick={event=>{event.preventDefault();event.stopPropagation();deleteFile(file);}}>Delete</button>}
+   </summary>
+   {canManage&&selected.length>0&&<div className="workflow-bulk">
+    <span aria-live="polite">{selected.length} selected</span>
+    <button type="button" className="file-danger" onClick={()=>deleteTasks(selected)}>Delete selected</button>
+    <button type="button" onClick={()=>select(selected,false)}>Clear selection</button>
    </div>}
-   {items.length?<div className="table-wrap"><table className="workflow-table">
-    <thead><tr><th>Operation</th><th>Task type</th><th>Operator</th><th>Pages</th><th>Due</th><th>Effort</th><th>Status</th><th>Actions</th></tr></thead>
-    <tbody>{rows.map(task=>{
+   {items.length?<div className="table-wrap"><table className="workflow-table" style={{'--prerequisite-gutter':lanes*9+'px'}}>
+    <thead><tr>{canManage&&<th className="workflow-selection" aria-label="Selection"><label>
+     <input type="checkbox" aria-label={'Select all tasks for '+file.name} checked={allSelected} data-visible={selected.length>0}
+      ref={input=>{if(input)input.indeterminate=selected.length>0&&!allSelected;}}
+      onChange={event=>select(ids,event.target.checked)}/>
+    </label></th>}<th>Operation</th><th>Task type</th><th>Operator</th><th>Pages</th><th>Due</th><th>Effort</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>{rows.map((task,rowIndex)=>{
      const blockers=incompletePredecessors(task,tasks,statuses);
      const blocked=blockers.length>0;
      const parent=parents.has(task.id);
@@ -283,10 +317,19 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      const targetMode=target?.id===task.id?target.mode:null;
      const siblings=rows.filter(row=>(row.parentTask||null)===(task.parentTask||null));
      const index=siblings.indexOf(task);
-     return <tr key={task.id} className={(task.parentTask?'workflow-subtask ':'')+(targetMode?'drag-'+targetMode:'')}
+     const checked=selection.has(task.id);
+     return <tr key={task.id} data-selected={canManage&&checked} className={(task.parentTask?'workflow-subtask ':'')+(targetMode?'drag-'+targetMode:'')}
       onDragOver={event=>{if(drag?.file===file.id&&drag.id!==task.id){event.preventDefault();const mode=placement(event);if(target?.id!==task.id||target.mode!==mode)setTarget({id:task.id,mode});}}}
       onDrop={event=>drop(file,event,task.id)}>
-      <td style={{'--workflow-indent':Math.min(depth,5)*18+'px'}}><div className="workflow-operation" style={{marginInlineStart:Math.min(depth,5)*18}} data-movable={canManage&&items.length>1}>
+      {canManage&&<td className="workflow-selection"><label>
+       <input type="checkbox" aria-label={'Select task '+task.id} checked={checked} data-visible={checked}
+        onChange={event=>select([task.id],event.target.checked)}/>
+      </label></td>}
+      <td className="workflow-operation-cell" style={{'--workflow-indent':Math.min(depth,5)*18+'px'}}>
+       {segments[rowIndex].map(({id,lane,first,last,branch})=><span key={id} aria-hidden="true"
+        className="workflow-prerequisite-line" data-first={first} data-last={last} data-branch={branch}
+        style={{'--prerequisite-lane':lane*9+'px'}}/>)}
+       <div className="workflow-operation" style={{marginInlineStart:Math.min(depth,5)*18}} data-movable={canManage&&items.length>1}>
        {canManage&&(items.length>1||task.parentTask)&&<button type="button" className="drag-handle" draggable title="Drop at the top to start after this task, in the center to nest, or at the bottom to reorder. Up and Down reorder. Left promotes to top level."
         aria-label={'Reorder '+task.id} onDragStart={event=>{
          event.dataTransfer.setData('text/plain',task.id);event.dataTransfer.effectAllowed='move';setDrag({file:file.id,id:task.id});
@@ -309,7 +352,11 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
          ' · replaces '+draggedTask.dependsOn}
        </span>}
        {predecessors.length>0&&<small className={'workflow-relation dependency-relation '+(blocked?'workflow-blocked':'')}>
-        <span>{blocked?'Waiting for':'After'}</span>{predecessors.map(linkedTask)}</small>}
+        <span>{blocked?'Waiting for':'After'}</span>{predecessors.map(id=><span className="workflow-dependency" key={id}>
+         {linkedTask(id)}{canManage&&task.dependsOn===id&&<button type="button" className="dependency-remove"
+          aria-label={'Remove prerequisite '+id+' from '+task.id} title="Remove prerequisite"
+          onClick={()=>removeDependency(task.id,id)}>×</button>}
+        </span>)}</small>}
        {parallel&&<small className="workflow-relation parallel-relation">Parallel · same prerequisites</small>}
        {!predecessors.length&&!parallel&&<small className="workflow-relation parallel-relation">No prerequisite</small>}
       </div></td>
@@ -320,7 +367,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
       <td>{canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
       <td>{parent?'—':formatMinutes(effort.minutes)}{!parent&&effort.source==='Historical'&&<small>Historical</small>}</td>
       <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save} editor={taskStatusEditor}/>:statusBadge(task.status)}</td>
-      <td><div className="workflow-actions">{taskAction(task)}{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}</div></td>
+      <td><div className="workflow-actions">{taskAction(task)}{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}{canManage&&<button type="button" className="file-danger" aria-label={'Delete task '+task.id} onClick={()=>deleteTasks([task.id])}>Delete</button>}</div></td>
      </tr>;
     })}</tbody>
    </table></div>:<p className="empty">No operations in this workflow yet.</p>}
