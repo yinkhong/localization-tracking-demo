@@ -512,7 +512,7 @@ function App(){
  {['Tasks','Files & workflows'].includes(projectTab)&&<FileWorkflows files={requestFiles} tasks={requestTasks} account={req.account}
   openTask={id=>navigate('Task',id)} locked={isRunning} addTask={file=>setDialog({kind:'newtask',request:req.id,file})}
   editFile={file=>setDialog({kind:'renamefile',file})} deleteFile={file=>setDialog({kind:'deletefile',file})}
-  addSubtask={addSubtask} canAddSubtask={canAddSubtask} orders={workflowOrders} {...{moveTask,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor}} showError={setWorkflowError}
+  addSubtask={addSubtask} canAddSubtask={canAddSubtask} orders={workflowOrders} deleteTasks={confirmTaskDeletion} {...{moveTask,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,removeDependency}} showError={setWorkflowError}
   {...{people,canManage,editable,changeTask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant}}/>}
  {canManage&&['Tasks','Files & workflows'].includes(projectTab)&&removedFiles.length>0&&
   <details className="panel removed-files"><summary>Deleted files ({removedFiles.length})</summary>
