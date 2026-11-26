@@ -2,7 +2,7 @@ import React, {useEffect,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {demoRequests,demoTasks,demoDefects,estimate,formatMinutes,operatorRanking,zones} from './data';
 import {audit, bootstrapTimeline, Metadata, patchRecord, ResourceTimeline, SessionList, TimelineAdmin, timelineRoles} from './timeline';
-import {ActivityLog, bulkWorkflowFields, bootstrapWorkflow, demoProfiles, FileKanban, FileWorkflows, InlineDue, TaskStatus, TaskTypePicker, withActivity, ZonedInput} from './workflow';
+import {ActivityLog, bulkWorkflowFields, bootstrapWorkflow, demoProfiles, FileKanban, FileWorkflows, InlineDue, TaskStatus, TaskTypePicker, withActivity, WorkflowIconAction, WorkflowOperator, ZonedInput} from './workflow';
 import {blockedTask, bootstrapStatuses, dependencyError, dependencyIds, initialStatuses, parentTaskIds, resolveTasks, StatusAdmin, StatusPicker, statusColor, statusGroup, workflowOrder} from './status';
 import {DefectForm, RcaBody} from './rca';
 import {Acknowledgment, bootstrapDefects, defectAttribution, defectChanges, DefectPerformance, defectSeverities, defectStatuses, canEditDefect, RcaTimeline, ReviewSelect, reviewRoles} from './defect-review';
@@ -420,14 +420,28 @@ function App(){
   if(parents.has(t.id)||phase(t.status)==='Complete'||!editable(t))return <button onClick={()=>navigate('Task',t.id)}>View</button>;
   if(taskBlocked(t)&&t.person!==profile)return <button onClick={()=>navigate('Task',t.id)}>View</button>;
   if(t.person&&t.person!==profile)return <button onClick={()=>navigate('Task',t.id)}>View</button>;
-  if(!t.person)return <button onClick={()=>setDialog({kind:'rank',task:t})}>Suggest operator</button>;
+  if(!t.person)return <button onClick={()=>navigate('Task',t.id)}>View</button>;
   return <button onClick={()=>start(t)}>{t.status==='Paused'?'Resume':'Start timer'}</button>;
+ }
+ function suggestOperator(task){
+  if(canManage&&!parents.has(task.id)&&!isRunning(task.id))setDialog({kind:'rank',task});
+ }
+ function fileWorkflows(files,request,parentId){
+  return <FileWorkflows key={parentId??request.id} files={files} tasks={tasks.filter(item=>item.request===request.id)}
+   account={request.account} parentId={parentId} openTask={id=>navigate('Task',id)} locked={isRunning}
+   addTask={file=>setDialog({kind:'newtask',request:request.id,file})}
+   editFile={file=>setDialog({kind:'renamefile',file})} deleteFile={file=>setDialog({kind:'deletefile',file})}
+   orders={workflowOrders} deleteTasks={confirmTaskDeletion} editSelected={(ids,field)=>setDialog({kind:'bulk-edit',ids,field})}
+   showError={setWorkflowError} {...{moveTask,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,removeDependency,recordedEffort,
+    people,canManage,editable,changeTask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,addSubtask,canAddSubtask,suggestOperator}}/>;
  }
  function requestTable(items){
   return <div className="table-wrap"><table><thead><tr><th>Request</th><th>Account</th><th>Due</th><th>Forecast</th><th>Status</th><th>Delivery risk</th></tr></thead><tbody>{items.map(r=><tr key={r.id}><td><button className="link record" onClick={()=>navigate('Request',r.id)}>{r.title}</button><small>{r.id} · {r.files} files</small></td><td>{accountLabel(r.account)}</td><td>{date(r.due)}</td><td>{date(r.forecast)}</td><td>{statusBadge(r.status,requestStatuses)}</td><td>{badge(r.risk)}</td></tr>)}</tbody></table>{!items.length&&<div className="empty">No matching requests.</div>}</div>;
  }
  function taskTable(items){
-  return <div className="table-wrap"><table><thead><tr><th>File / operation</th><th>Assignee</th><th>Due</th><th title="Estimated effort">Est.</th><th title="Recorded work time">Recorded</th><th>Status</th><th>Action</th></tr></thead><tbody>{items.map(t=>{const e=estimate(requestOf(t.request)?.account,t.type,t.pages);return <tr key={t.id}><td><button className="link record" onClick={()=>navigate('Task',t.id)}>{t.file}</button><small>{t.parentTask?'Subtask · ':''}{typeLabel(t.type)} · {t.id}</small></td><td>{parents.has(t.id)?'Subtasks only':t.person||'Unassigned'}</td><td>{date(t.due)}</td><td>{parents.has(t.id)?'—':formatMinutes(e.minutes)}{!parents.has(t.id)&&e.source==='Historical'&&<small>Historical</small>}</td><td className="recorded-effort">{t.workflowGroup?'—':recordedEffort(t)}</td><td>{statusBadge(t.status)}</td><td>{taskAction(t)}</td></tr>;})}</tbody></table>{!items.length&&<div className="empty">No matching tasks.</div>}</div>;
+  return <div className="table-wrap"><table><thead><tr><th>File / operation</th><th>Assignee</th><th>Due</th><th title="Estimated effort">Est.</th><th title="Recorded work time">Recorded</th><th>Status</th><th>Action</th></tr></thead><tbody>{items.map(t=>{const e=estimate(requestOf(t.request)?.account,t.type,t.pages);return <tr key={t.id}><td><button className="link record" onClick={()=>navigate('Task',t.id)}>{t.file}</button><small>{t.parentTask?'Subtask · ':''}{typeLabel(t.type)} · {t.id}</small></td><td>{parents.has(t.id)?'Subtasks only':canManage&&view==='Planning'?
+  <WorkflowOperator task={t} {...{people,suggestOperator}} disabled={isRunning(t.id)} save={fields=>changeTask(t.id,fields)}/>:
+  t.person||'Unassigned'}</td><td>{date(t.due)}</td><td>{parents.has(t.id)?'—':formatMinutes(e.minutes)}{!parents.has(t.id)&&e.source==='Historical'&&<small>Historical</small>}</td><td className="recorded-effort">{t.workflowGroup?'—':recordedEffort(t)}</td><td>{statusBadge(t.status)}</td><td>{taskAction(t)}</td></tr>;})}</tbody></table>{!items.length&&<div className="empty">No matching tasks.</div>}</div>;
  }
  function defectTable(items){
  return <div className="table-wrap"><table><thead><tr><th>Finding</th><th>Related request</th><th>Severity</th><th>Status</th></tr></thead><tbody>{items.map(d=><tr key={d.id}><td><button className="link record" onClick={()=>navigate('Defect',d.id)}>{d.title}</button><small>{d.id}</small></td><td><button className="link" onClick={()=>navigate('Request',d.request)}>{d.request}</button></td><td>{badge(d.severity)}</td><td>{badge(d.status)}</td></tr>)}</tbody></table>{!items.length&&<div className="empty">No findings to show.</div>}</div>;
@@ -515,11 +529,7 @@ function App(){
  {projectTab==='Escalations & defects'&&<section className="panel">{defectTable(defects.filter(d=>d.request===req.id))}</section>}
  {projectTab==='Kanban view'&&<FileKanban files={requestFiles} tasks={requestTasks} statuses={statuses}
   openFile={id=>{setFileFocus(id);setProjectTab('Files & workflows');}}/>}
- {['Tasks','Files & workflows'].includes(projectTab)&&<FileWorkflows files={requestFiles} tasks={requestTasks} account={req.account}
-  openTask={id=>navigate('Task',id)} locked={isRunning} addTask={file=>setDialog({kind:'newtask',request:req.id,file})}
-  editFile={file=>setDialog({kind:'renamefile',file})} deleteFile={file=>setDialog({kind:'deletefile',file})}
-  addSubtask={addSubtask} canAddSubtask={canAddSubtask} orders={workflowOrders} deleteTasks={confirmTaskDeletion} editSelected={(ids,field)=>setDialog({kind:'bulk-edit',ids,field})} {...{moveTask,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,removeDependency,recordedEffort}} showError={setWorkflowError}
-  {...{people,canManage,editable,changeTask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant}}/>}
+ {['Tasks','Files & workflows'].includes(projectTab)&&fileWorkflows(requestFiles,req)}
  {canManage&&['Tasks','Files & workflows'].includes(projectTab)&&removedFiles.length>0&&
   <details className="panel removed-files"><summary>Deleted files ({removedFiles.length})</summary>
    {removedFiles.map(file=><div key={file.id}><span>{file.name}</span><button onClick={()=>updateFile(file,'restore')}>Restore</button></div>)}
@@ -569,9 +579,9 @@ function App(){
   <option key={status.id} value={status.id}>{status.label}</option>)}</optgroup>)}</select>}</div>{(()=>{const items=tasks.filter(t=>!parents.has(t.id)&&t.person===profile&&(filter==='All'||t.status===filter));return mode==='Table'?taskTable(items):<div className="task-cards">{items.map(t=><article key={t.id}><small>{typeLabel(t.type)} · {t.request}</small><button className="link record" onClick={()=>navigate('Task',t.id)}>{t.file}</button>{statusBadge(t.status)}<p>{date(t.due)}</p>{taskAction(t)}</article>)}{!items.length&&<p className="empty">No matching tasks.</p>}</div>;})()}</section></>}
  {view==='Task'&&task&&(task.deletedAt!=null||archivedFiles.has(task.fileId))&&<section className="panel"><p className="note">{task.deletedAt!=null?'This task was deleted.':'This task belongs to a deleted file.'}</p>
   <button className="link" onClick={()=>navigate('Request',task.request)}>Open related request</button></section>}
- {view==='Task'&&task&&task.deletedAt==null&&!archivedFiles.has(task.fileId)&&<><section className="panel details"><div className="panel-header"><div>{(taskIsParent||!editable(task))&&statusBadge(task.status)} <button className="link" onClick={()=>navigate('Request',task.request)}>{task.request}</button></div><div className="workflow-actions">{taskAction(task)}{canManage&&<button className="file-danger" onClick={()=>confirmTaskDeletion([task.id])}>Delete task</button>}</div></div>
- <div className="properties"><div><small>Account</small><strong>{accountLabel(requestOf(task.request)?.account)}</strong></div><div><small>Assignee</small>{taskIsParent?<strong>Subtasks only</strong>:canManage?<select aria-label="Task assignee" disabled={isRunning(task.id)}
- value={task.person} onChange={e=>changeTask(task.id,{person:e.target.value})}><option value="">Unassigned</option>{people.map(person=><option key={person}>{person}</option>)}</select>:<strong>{task.person||'Unassigned'}</strong>}</div><div><small>Due</small>{canManage?<InlineDue task={task} zone={zone} showError={setWorkflowError} localValue={localValue} toInstant={toInstant} save={fields=>changeTask(task.id,fields)}/>:<strong>{date(task.due)}</strong>}</div>
+ {view==='Task'&&task&&task.deletedAt==null&&!archivedFiles.has(task.fileId)&&<><section className="panel details"><div className="panel-header"><div>{(taskIsParent||!editable(task))&&statusBadge(task.status)} <button className="link" onClick={()=>navigate('Request',task.request)}>{task.request}</button></div><div className="workflow-actions">{taskAction(task)}{canManage&&<WorkflowIconAction icon="×" danger label={'Delete task '+task.id} onClick={()=>confirmTaskDeletion([task.id])}/>}</div></div>
+ <div className="properties"><div><small>Account</small><strong>{accountLabel(requestOf(task.request)?.account)}</strong></div><div><small>Assignee</small>{taskIsParent?<strong>Subtasks only</strong>:canManage?<WorkflowOperator {...{task,people,suggestOperator}} label="Task assignee"
+  disabled={isRunning(task.id)} save={fields=>changeTask(task.id,fields)}/>:<strong>{task.person||'Unassigned'}</strong>}</div><div><small>Due</small>{canManage?<InlineDue task={task} zone={zone} showError={setWorkflowError} localValue={localValue} toInstant={toInstant} save={fields=>changeTask(task.id,fields)}/>:<strong>{date(task.due)}</strong>}</div>
  {canManage&&<div><small>Task type</small>{task.parentTask?<strong>{typeLabel(task.type)}</strong>:<TaskTypePicker value={task.type} taskTypes={taskTypes} editor={taskTypeEditor} disabled={isRunning(task.id)} onChange={type=>changeTask(task.id,{type})}/>}</div>}
  {!taskIsParent&&editable(task)&&<div><small>Status</small><TaskStatus task={task} statuses={statuses} locked={isRunning(task.id)} blocked={taskBlocked(task)} editor={taskStatusEditor} save={fields=>changeTask(task.id,fields)}/></div>}
  {taskIsParent&&<div><small>Progress</small><strong>{tasks.filter(t=>t.parentTask===task.id&&phase(t.status)==='Complete').length} of {tasks.filter(t=>t.parentTask===task.id).length} subtasks complete</strong></div>}<div><small>Recorded effort</small><strong>{recordedEffort(task)}</strong></div></div>
@@ -591,7 +601,9 @@ function App(){
   {correctionAccess[role]&&!taskIsParent&&<CorrectTime key={task.id} {...{task,people,zone,toInstant,localValue}}
    running={timers.find(timer=>timer.id===task.id)} date={historyDate} save={saveCorrection}/>}
  </SessionList>
- {(canManage||taskIsParent)&&<section className="panel"><div className="panel-header"><h2>Subtasks</h2>{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(workflowFiles.find(file=>file.id===task.fileId),task)}>Add subtask</button>}</div>{taskTable(tasks.filter(t=>t.parentTask===task.id))}</section>}
+ {(canManage||taskIsParent)&&<section className="panel"><div className="panel-header"><h2>Subtasks</h2>{canManage&&<WorkflowIconAction icon="+" label={'Add subtask to '+task.id} disabled={!canAddSubtask(task)}
+  onClick={()=>addSubtask(workflowFiles.find(file=>file.id===task.fileId),task)}/>}</div>
+  {fileWorkflows(workflowFiles.filter(file=>file.id===task.fileId),requestOf(task.request),task.id)}</section>}
  <section className="panel"><div className="panel-header"><h2>Related defects</h2><button onClick={()=>setDialog({kind:'defect',request:task.request,task:task.id})}>New report</button></div>{defectTable(defects.filter(d=>d.task===task.id||d.relatedTasks?.includes(task.id)))}</section></>}
  {view==='Defects'&&<section className="panel"><div className="panel-header filters">{searchInput('Search defect reports')}{selectFilter(['All','Open','Under review','Closed'])}</div>{defectTable(defects.filter(d=>search(d.id,d.title,d.request)&&(filter==='All'||d.status===filter)))}</section>}
  {view==='Defect'&&defect&&<>

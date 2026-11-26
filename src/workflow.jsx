@@ -244,8 +244,25 @@ export function FileKanban({files,tasks,statuses,openFile}){
 export const bulkWorkflowFields={type:'Type',person:'Assignee',status:'Status',pages:'Pages',due:'Due date',
  schedule:'Schedule',dependsOn:'Prerequisite',parentTask:'Parent'};
 
+export function WorkflowIconAction({icon,label,onClick,disabled=false,danger=false}){
+ return <button type="button" className={'workflow-icon'+(danger?' file-danger':'')}
+  title={label} aria-label={label} onClick={onClick} disabled={disabled}>
+  {icon==='person'?<span className="operator-person-icon" aria-hidden="true"/>:
+   <span aria-hidden="true">{icon}</span>}
+ </button>;
+}
+
+export function WorkflowOperator({task,people,disabled,suggestOperator,save,label='Operator · '+task.id}){
+ return <div className="workflow-operator">
+  <TaskSelect label={label} value={task.person||''} options={[[ '', 'Unassigned' ],...people]}
+   disabled={disabled} save={person=>save({person})}/>
+  <WorkflowIconAction icon="person" label={'Suggest operator for '+task.id} disabled={disabled}
+   onClick={()=>suggestOperator(task)}/>
+ </div>;
+}
+
 export function FileWorkflows({files,tasks,account,people,canManage,editable,locked,changeTask,openTask,
- addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask,deleteTasks,removeDependency,editSelected,recordedEffort}) {
+ addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask,deleteTasks,removeDependency,editSelected,recordedEffort,suggestOperator,parentId}) {
  const [drag,setDrag]=useState(null);
  const [target,setTarget]=useState(null);
  const [selection,setSelection]=useState(()=>new Set());
@@ -268,7 +285,8 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
   setDrag(null);setTarget(null);
  }
  if(!files.length)return <p className="empty">Add a file to create its workflow.</p>;
- const selectedIds=tasks.filter(task=>!task.workflowGroup&&selection.has(task.id)).map(task=>task.id);
+ const visibleTasks=parentId?tasks.filter(task=>task.parentTask===parentId):tasks;
+ const selectedIds=visibleTasks.filter(task=>!task.workflowGroup&&selection.has(task.id)).map(task=>task.id);
  return <div className="file-workflows">
   {canManage&&selectedIds.length>0&&<div className="workflow-bulk" role="toolbar" aria-label="Selected workflow tasks">
    <span aria-live="polite">{selectedIds.length} selected</span>
@@ -280,7 +298,8 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
   const items=tasks.filter(task=>task.fileId===file.id);
   const parents=parentTaskIds(items);
   const leaves=items.filter(task=>!parents.has(task.id));
-  const rows=workflowOrder(items,orders[file.id]);
+  const orderedRows=workflowOrder(items,orders[file.id]);
+  const rows=parentId?orderedRows.filter(task=>task.parentTask===parentId):orderedRows;
   const {segments,lanes}=prerequisiteGroups(rows);
   const ids=rows.filter(task=>!task.workflowGroup).map(task=>task.id);
   const selected=ids.filter(id=>selection.has(id));
@@ -290,8 +309,8 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
    const linked=byId.get(id);
    return linked&&<button className="link" key={id} onClick={()=>openTask(id)}>{typeLabel(linked.type)} · {id}</button>;
   };
-  return <details className="file-workflow" id={'workflow-'+file.id} key={file.id} open>
-   <summary>
+  return <details className="file-workflow" id={'workflow-'+file.id} key={file.id} data-subtasks={Boolean(parentId)} open>
+   <summary hidden={Boolean(parentId)}>
     <strong>{file.name}</strong>
     {canManage&&<button type="button" className="file-rename" title="Rename file" aria-label={'Rename file '+file.name}
      onClick={event=>{event.preventDefault();event.stopPropagation();editFile(file);}}>✎</button>}
@@ -299,7 +318,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
     {canManage&&<button type="button" className="file-delete file-danger" aria-label={'Delete file '+file.name}
      onClick={event=>{event.preventDefault();event.stopPropagation();deleteFile(file);}}>Delete</button>}
    </summary>
-   {items.length?<div className="table-wrap"><table className="workflow-table" style={{'--prerequisite-gutter':lanes*9+'px'}}>
+   {rows.length?<div className="table-wrap"><table className="workflow-table" style={{'--prerequisite-gutter':lanes*9+'px'}}>
     <thead><tr>{canManage&&<th className="workflow-selection" aria-label="Selection"><label>
      <input type="checkbox" aria-label={'Select all tasks for '+file.name} checked={allSelected} data-visible={selected.length>0}
       ref={input=>{if(input)input.indeterminate=selected.length>0&&!allSelected;}}
@@ -313,7 +332,8 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      let depth=0;
      const seen=new Set([task.id]);
      for(let ancestor=byId.get(task.parentTask);ancestor&&!seen.has(ancestor.id);ancestor=byId.get(ancestor.parentTask)){
-      depth++;seen.add(ancestor.id);
+      if(!parentId)depth++;
+      seen.add(ancestor.id);
      }
      const save=fields=>changeTask(task.id,fields);
      const effort=estimate(account,task.type,task.pages);
@@ -346,7 +366,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
         }}>⠿</button>}
        <button className="link record" onClick={()=>openTask(task.id)}>{typeLabel(task.type)}{task.workflowGroup?' group':''} <span aria-hidden="true">↗</span></button>
        {!task.workflowGroup&&<small>{parent?'Parent task · ':''}{task.id}</small>}
-       {parentTask&&<small className="workflow-relation child-relation">
+       {parentTask&&!parentId&&<small className="workflow-relation child-relation">
         <button type="button" className="link" onClick={()=>openTask(parentTask.id)}>
          <span aria-hidden="true">↳ </span>{typeLabel(parentTask.type)}{parentTask.workflowGroup?' group':' - '+parentTask.id}
         </button></small>}
@@ -363,20 +383,20 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
         </span>)}</small>}
       </div></td>
       <td>{canManage&&!task.parentTask?<TaskTypePicker label={'Task type · '+task.id} value={task.type} {...{taskTypes}} disabled={locked(task.id)} editor={taskTypeEditor} onChange={type=>save({type})}/>:typeLabel(task.type)}</td>
-      <td>{parent?<span className="parent-note">Subtasks only</span>:canManage?<TaskSelect label={'Operator · '+task.id} value={task.person||''} options={[[ '', 'Unassigned' ],...people]}
-       disabled={locked(task.id)} save={person=>save({person})}/>:task.person||'Unassigned'}</td>
+      <td>{parent?<span className="parent-note">Subtasks only</span>:canManage?<WorkflowOperator {...{task,people,suggestOperator,save}} disabled={locked(task.id)}/>:task.person||'Unassigned'}</td>
       <td>{task.workflowGroup?'—':editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>
       <td>{task.workflowGroup?'—':canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
       <td>{parent?'—':formatMinutes(effort.minutes)}{!parent&&effort.source==='Historical'&&<small>Historical</small>}</td>
       <td className="recorded-effort">{task.workflowGroup?'—':recordedEffort(task)}</td>
       <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save} editor={taskStatusEditor}/>:statusBadge(task.status)}</td>
-      <td><div className="workflow-actions">{taskAction(task)}{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}{canManage&&!task.workflowGroup&&<button type="button" className="file-danger" aria-label={'Delete task '+task.id} onClick={()=>deleteTasks([task.id])}>Delete</button>}</div></td>
+      <td><div className="workflow-actions">{taskAction(task)}{canManage&&<WorkflowIconAction icon="+" label={'Add subtask to '+task.id} disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}/>}
+       {canManage&&!task.workflowGroup&&<WorkflowIconAction icon="×" danger label={'Delete task '+task.id} onClick={()=>deleteTasks([task.id])}/>}</div></td>
      </tr>;
     })}</tbody>
-   </table></div>:<p className="empty">No operations in this workflow yet.</p>}
+   </table></div>:<p className="empty">{parentId?'No subtasks yet.':'No operations in this workflow yet.'}</p>}
    {canManage&&drag?.file===file.id&&<div className="root-drop" onDragOver={event=>event.preventDefault()}
     onDrop={event=>drop(file,event,null,'root')}>Drop here to make a top-level task</div>}
-   {canManage&&<div className="workflow-footer"><button onClick={()=>addTask(file)}>＋ Add task</button></div>}
+   {canManage&&!parentId&&<div className="workflow-footer"><button onClick={()=>addTask(file)}>＋ Add task</button></div>}
   </details>;
  })}</div>;
 }
