@@ -17,7 +17,7 @@ const labelFor=(event,zone,typeLabel)=>[
 ].filter(Boolean).join(' · ');
 
 export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeOff,zone,now,toInstant,typeLabel,navigate,archivedFiles}){
- const [window,setWindow]=useState(()=>({day,at:null,revision:0}));
+ const [window,setWindow]=useState(()=>({day,at:Date.now(),revision:0}));
  const [visibleDay,setVisibleDay]=useState(day);
  const [expanded,setExpanded]=useState(()=>new Set());
  const toggleMember=name=>setExpanded(current=>{

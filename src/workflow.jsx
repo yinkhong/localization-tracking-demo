@@ -194,7 +194,7 @@ export function InlineDue({task,zone,localValue,toInstant,save,showError}) {
   onBlur={value=>{
    if(value===original)return;
    const due=value?toInstant(value,zone):null;
-   if(due){save({due});return;}
+   if(due){save({due});return original;}
    showError('Enter a valid due date and time for '+task.id+' in '+zoneCode(zone,task.due)+'.');
    return original;
   }} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/>;
@@ -385,7 +385,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
       <td>{canManage&&!task.parentTask?<TaskTypePicker label={'Task type · '+task.id} value={task.type} {...{taskTypes}} disabled={locked(task.id)} editor={taskTypeEditor} onChange={type=>save({type})}/>:typeLabel(task.type)}</td>
       <td>{parent?<span className="parent-note">Subtasks only</span>:canManage?<WorkflowOperator {...{task,people,suggestOperator,save}} disabled={locked(task.id)}/>:task.person||'Unassigned'}</td>
       <td>{task.workflowGroup?'—':editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>
-      <td>{task.workflowGroup?'—':canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
+      <td>{canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
       <td>{parent?'—':formatMinutes(effort.minutes)}{!parent&&effort.source==='Historical'&&<small>Historical</small>}</td>
       <td className="recorded-effort">{task.workflowGroup?'—':recordedEffort(task)}</td>
       <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save} editor={taskStatusEditor}/>:statusBadge(task.status)}</td>

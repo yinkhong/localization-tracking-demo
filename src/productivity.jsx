@@ -76,7 +76,7 @@ function TimeOff({zone,entries,update}){
 }
 
 export function Productivity({workPlan,tasks,timers,statuses,now,teamGroups,profiles,shifts,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff,breakPlans,breakLogs,activeBreaks}){
- const [day,setDay]=useState(()=>dayAt(now,zones[zone]));
+ const [day,setDay]=useState(()=>dayAt(Date.now(),zones[zone]));
  const [mode,setMode]=useState('Day'),[customEnd,setCustomEnd]=useState(day);
  const [team,setTeam]=useState(''),[member,setMember]=useState('');
  const teams=[...new Set(teamGroups.map(group=>group.team))];

@@ -17,6 +17,7 @@ import {Productivity,ShiftSettings} from './productivity';
 import {defaultShift,isCancelled} from './productivity-data';
 import {Breaks,CorrectTime,TodayBreaks} from './time-entry-ui';
 import {correctTaskTime,defaultCorrectionAccess,planBreak,todayBreaks} from './time-entry';
+import {updateTaskDueDates} from './task-due';
 import {planWork} from './auto-schedule';
 import {useFloatingTimer} from './floating-timer';
 import './style.css';
@@ -292,9 +293,30 @@ function App(){
  function changeProfilePreference(update){
   setState(s=>({...s,profiles:{...s.profiles,[profile]:{...s.profiles[profile],...update}}}));
  }
+ function saveTaskDueDates(ids,due,approved=false){
+  if(!canManage||ids.some(id=>!tasks.some(task=>task.id===id)))return 'You need permission to edit these due dates.';
+  const timestamp=Date.now();
+  const result=updateTaskDueDates(tasks,ids,due,timestamp);
+  if(result.error)return result.error;
+  if(result.overwritten.length&&!approved){
+   setDialog({kind:'confirm-due',ids,due,overwritten:result.overwritten});
+   return;
+  }
+  commit('Updated task due dates',(s,at)=>{
+   if(s.profiles[s.profile].role==='Operator')return s;
+   const updated=updateTaskDueDates(s.tasks,ids,due,at);
+   return updated.error?s:{...s,tasks:updated.tasks};
+  },timestamp);
+  setWorkflowError('');setDialog(null);setNotice('Due dates updated');
+ }
  function changeTask(id,fields){
   const current=taskOf(id);
   if(!current||archivedFiles.has(current.fileId))return;
+  if(Object.hasOwn(fields,'due')){
+   const error=saveTaskDueDates([id],fields.due);
+   if(error)setWorkflowError(error);
+   return;
+  }
   const typeBranch=fields.type?taskBranch(current.id,tasks):[];
   if(fields.type&&(current.parentTask||typeBranch.some(item=>item.type!==fields.type&&isRunning(item.id)))){
    setWorkflowError('Change the parent task type after pausing work in this branch.');return;
@@ -657,7 +679,7 @@ function App(){
  </div>
  {notice&&<div className="toast" role="status">{notice}</div>}
  {dialog&&dialog.kind!=='defect'&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setDialog(null);}}><div className={'modal '+(dialog.kind==='rank'?'wide':'')} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
- <div className="dialog-head"><h2 id="dialog-title">{{request:'New request',rank:'Ranked operator suggestions',timer:'Another timer is running',newfile:'Add file',renamefile:'Rename file',deletefile:'Delete file','bulk-edit':'Set '+bulkWorkflowFields[dialog.field]+' for selected tasks','delete-tasks':tasksToDelete.length===1?'Delete task?':'Delete selected tasks?','confirm-task-move':'Change task type and move?',newtask:dialog.parent?'Add subtask':'Add file task'}[dialog.kind]}</h2><button aria-label="Close dialog" onClick={()=>setDialog(null)}>×</button></div>
+ <div className="dialog-head"><h2 id="dialog-title">{{request:'New request',rank:'Ranked operator suggestions',timer:'Another timer is running',newfile:'Add file',renamefile:'Rename file',deletefile:'Delete file','confirm-due':'Update subtask due dates?','bulk-edit':'Set '+bulkWorkflowFields[dialog.field]+' for selected tasks','delete-tasks':tasksToDelete.length===1?'Delete task?':'Delete selected tasks?','confirm-task-move':'Change task type and move?',newtask:dialog.parent?'Add subtask':'Add file task'}[dialog.kind]}</h2><button aria-label="Close dialog" onClick={()=>setDialog(null)}>×</button></div>
  {dialog.kind==='request'&&<RequestForm zone={zone} {...{taskTypes,accounts,accountEditor}} save={values=>{
   const id='RQ-'+(Math.max(1045,...requests.map(r=>Number(r.id.split('-')[1])))+1);
   commit('Created request',(s,timestamp)=>({...s,requests:[{...values,id,status:'Ready',risk:'Unscheduled',
@@ -691,6 +713,7 @@ function App(){
  {dialog.kind==='bulk-edit'&&<BulkTaskForm key={dialog.field} {...{dialog,people,statuses,taskTypes,zone,toInstant,typeLabel,tasks}}
   cancel={()=>setDialog(null)} save={value=>{
    if(!canManage)return 'You need permission to edit workflows.';
+   if(dialog.field==='due')return saveTaskDueDates(dialog.ids,value);
    const timestamp=Date.now();
    const planned=bulkWorkflowUpdate(tasks,dialog.ids,dialog.field,value,statuses,timers,timestamp);
    if(planned.error)return planned.error;
@@ -705,6 +728,15 @@ function App(){
    },timestamp);
    setDialog(null);setNotice('Selected tasks updated');
   }}/>}
+ {dialog.kind==='confirm-due'&&<>
+  <p>This change will overwrite the existing due {dialog.overwritten.length===1?'date on 1 subtask':'dates on '+dialog.overwritten.length+' subtasks'}.
+   {dialog.due?' Subtasks will inherit '+date(dialog.due)+'.':' The affected due dates will be cleared.'}</p>
+  <div className="actions"><button type="button" onClick={()=>setDialog(null)}>Cancel</button>
+   <button type="button" className="primary" onClick={()=>{
+    const error=saveTaskDueDates(dialog.ids,dialog.due,true);
+    if(error)setWorkflowError(error);
+   }}>Update due dates</button></div>
+ </>}
  {dialog.kind==='delete-tasks'&&<>
   <p>{tasksToDelete.map(item=>typeLabel(item.type)+' · '+item.id).join(', ')}</p>
   <p>Unselected subtasks become top-level tasks and dependencies on deleted tasks are removed. The request’s activity log and linked defect reports retain a record of the deleted tasks.</p>
@@ -733,7 +765,7 @@ function App(){
    const entry={
    id,request:dialog.request,file:file.name,fileId:file.id,type:parent?.type??selectedType.id,
    parentTask:parent?.id,dependsOn,pages,
-   due:requestOf(dialog.request)?.due,status:dependsOn&&phase(taskOf(dependsOn)?.status)!=='Complete'?'Waiting':'Ready',
+   due:parent?(s.tasks.find(item=>item.id===parent.id)?.due??null):requestOf(dialog.request)?.due,status:dependsOn&&phase(taskOf(dependsOn)?.status)!=='Complete'?'Waiting':'Ready',
    person:d.get('person'),spent:0,sessions:[],...audit(timestamp,profile,Boolean(d.get('person'))),
    };
    const rows=workflowOrder(s.tasks.filter(item=>item.fileId===file.id),s.workflowOrders?.[file.id]);
