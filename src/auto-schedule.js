@@ -5,7 +5,17 @@ import {dependencyIds} from './status.jsx';
 const minute=60000;
 const horizonDays=30;
 const time=value=>value==null?NaN:new Date(value).getTime();
-const fixed=task=>Number.isFinite(task.scheduledStart)&&Number.isFinite(task.scheduledEnd)&&task.scheduledEnd>task.scheduledStart;
+function anchoredBooking(task,minutes){
+ const hasStart=Number.isFinite(task.scheduledStart);
+ const hasEnd=Number.isFinite(task.scheduledEnd);
+ if(hasStart&&hasEnd&&task.scheduledEnd>task.scheduledStart){
+  return {start:task.scheduledStart,end:task.scheduledEnd,source:'Fixed'};
+ }
+ if(hasStart===hasEnd||!Number.isFinite(minutes)||minutes<=0)return null;
+ const duration=minutes*minute;
+ return hasStart?{start:task.scheduledStart,end:task.scheduledStart+duration,source:'Estimated end'}:
+  {start:task.scheduledEnd-duration,end:task.scheduledEnd,source:'Estimated start'};
+}
 
 function reserve(windows,start,end){
  return windows.flatMap(([left,right])=>{
@@ -56,6 +66,15 @@ export function planWork({tasks,requests,statuses,shifts,leave,breakPlans,active
  const finish=new Map();
  const running=new Map(timers.map(timer=>[timer.id,timer]));
  const effort=task=>estimate(accounts.get(task.request),task.type,task.pages).minutes;
+ const bookings=new Map();
+ for(const task of pending){
+  const booking=anchoredBooking(task,effort(task));
+  if(booking)bookings.set(task.id,booking);
+  else if(Number.isFinite(task.scheduledStart)!==Number.isFinite(task.scheduledEnd)){
+   issues.push({task,reason:'An effort estimate is needed to calculate the missing schedule time'});
+   finish.set(task.id,null);
+  }
+ }
  const assigned=task=>time(task.assignedAt??task.createdAt)||0;
  for(const task of pending){
   if(!byMember.has(task.person))byMember.set(task.person,[]);
@@ -71,19 +90,24 @@ export function planWork({tasks,requests,statuses,shifts,leave,breakPlans,active
   for(const {start,end} of breakPlans[person]??[])windows=reserve(windows,start,end);
   const activeBreak=activeBreaks[person];
   if(activeBreak)windows=reserve(windows,activeBreak.start,now+minute);
-  const bookings=assignedTasks.filter(fixed);
+  const assignedBookings=assignedTasks.flatMap(task=>{
+   const slot=bookings.get(task.id);
+   return slot?[{task,operator:person,...slot}]:[];
+  });
+  const fixedBookings=assignedBookings.filter(slot=>slot.source==='Fixed');
   const clashes=new Set();
-  for(const [index,task] of bookings.entries()){
-   for(const other of bookings.slice(index+1)){
-    if(task.scheduledStart<other.scheduledEnd&&other.scheduledStart<task.scheduledEnd){
-     clashes.add(task.id);clashes.add(other.id);
+  for(const [index,slot] of fixedBookings.entries()){
+   for(const other of fixedBookings.slice(index+1)){
+    if(slot.start<other.end&&other.start<slot.end){
+     clashes.add(slot.task.id);clashes.add(other.task.id);
     }
    }
-   windows=reserve(windows,task.scheduledStart,task.scheduledEnd);
-   finish.set(task.id,Math.max(now,task.scheduledEnd));
   }
-  for(const task of bookings)entries.push({task,operator:person,start:task.scheduledStart,end:task.scheduledEnd,
-   source:'Fixed',conflict:clashes.has(task.id)});
+  for(const slot of assignedBookings){
+   windows=reserve(windows,slot.start,slot.end);
+   finish.set(slot.task.id,Math.max(now,slot.end));
+   entries.push({...slot,conflict:clashes.has(slot.task.id)});
+  }
   for(const task of assignedTasks){
    const timer=running.get(task.id);
    if(!timer)continue;
@@ -106,8 +130,8 @@ export function planWork({tasks,requests,statuses,shifts,leave,breakPlans,active
    prioritize(prereq,deadline);
   }
  }
- for(const task of pending)if(!fixed(task)&&shifts[task.person])prioritize(task.id,specificDeadline(task,shifts[task.person],toInstant));
- const ordered=pending.filter(task=>!fixed(task)&&!running.has(task.id)).sort((a,b)=>
+ for(const task of pending)if(!bookings.has(task.id)&&!finish.has(task.id)&&shifts[task.person])prioritize(task.id,specificDeadline(task,shifts[task.person],toInstant));
+ const ordered=pending.filter(task=>!bookings.has(task.id)&&!finish.has(task.id)&&!running.has(task.id)).sort((a,b)=>
   (importance.get(a.id)??Infinity)-(importance.get(b.id)??Infinity)||assigned(a)-assigned(b)||a.id.localeCompare(b.id,'en',{numeric:true}));
  const visiting=new Set();
  function plan(id,asPrerequisite=false){
@@ -148,7 +172,11 @@ export function planWork({tasks,requests,statuses,shifts,leave,breakPlans,active
  for(const task of ordered)plan(task.id);
  for(const task of pending){
   const due=time(task.due);
-  if(!fixed(task)&&Number.isFinite(due)&&finish.get(task.id)>due)issues.push({task,reason:'Estimated finish is after the due time'});
+  if(bookings.get(task.id)?.source!=='Fixed'&&Number.isFinite(due)&&finish.get(task.id)>due)issues.push({task,reason:'Estimated finish is after the due time'});
  }
  return {entries:entries.sort((a,b)=>a.start-b.start),issues};
+}
+
+export function scheduleLabel(source){
+ return source==='Deadline'?'Auto · deadline':source==='FIFO'?'Auto · FIFO':source;
 }

@@ -784,13 +784,9 @@ function BulkTaskForm({dialog,people,statuses,taskTypes,zone,toInstant,typeLabel
    if(form.get('value')&&!value){setError('Enter a valid due date and time.');return;}
   }
   if(field==='schedule'){
-   const start=form.get('start'),end=form.get('end');
-   const scheduledStart=start?Date.parse(toInstant(start,zone)):null;
-   const scheduledEnd=end?Date.parse(toInstant(end,zone)):null;
-   if((start||end)&&(!Number.isFinite(scheduledStart)||!Number.isFinite(scheduledEnd)||scheduledEnd<=scheduledStart)){
-    setError('Enter a valid start and end with the end after the start, or clear both.');return;
-   }
-   value={scheduledStart,scheduledEnd};
+   const schedule=readSchedule(form,zone);
+   if(schedule.error){setError(schedule.error);return;}
+   value=schedule.fields;
   }
   setError(save(value)??'');
  }}>
@@ -800,29 +796,35 @@ function BulkTaskForm({dialog,people,statuses,taskTypes,zone,toInstant,typeLabel
   </select></label>:field==='pages'?<label>Pages<input name="value" type="number" min="1" max="100000" placeholder="Leave blank to clear"/></label>:
    field==='due'?<label>Due date<ZonedInput zone={zone} toInstant={toInstant} name="value"/></label>:
    <><label>Scheduled start<ZonedInput zone={zone} toInstant={toInstant} name="start"/></label>
-    <label>Scheduled end<ZonedInput zone={zone} toInstant={toInstant} name="end"/></label></>}
+    <label>Scheduled end<ZonedInput zone={zone} toInstant={toInstant} name="end"/></label><small>Enter one time to estimate the other.</small></>}
   {error&&<p className="error" role="alert">{error}</p>}
   <div className="actions"><button type="button" onClick={cancel}>Cancel</button><button type="submit" className="primary">Apply to {ids.length} tasks</button></div>
  </form>;
+}
+
+function readSchedule(form,zone){
+ const start=form.get('start'),end=form.get('end');
+ const scheduledStart=start?Date.parse(toInstant(start,zone)):null;
+ const scheduledEnd=end?Date.parse(toInstant(end,zone)):null;
+ if((start&&!Number.isFinite(scheduledStart))||(end&&!Number.isFinite(scheduledEnd))){
+  return {error:'Enter a valid local date and time.'};
+ }
+ if(start&&end&&scheduledEnd<=scheduledStart)return {error:'The scheduled end must be after the start.'};
+ return {fields:{scheduledStart,scheduledEnd}};
 }
 
 function ScheduleFields({task, zone, save}){
  const [error,setError]=useState('');
  return <form className="task-fields" key={zone} onSubmit={e=>{
   e.preventDefault();
-  const form=new FormData(e.currentTarget);
-  const start=form.get('start'),end=form.get('end');
-  const scheduledStart=start?Date.parse(toInstant(start,zone)):null;
-  const scheduledEnd=end?Date.parse(toInstant(end,zone)):null;
-  if ((start||end)&&(!Number.isFinite(scheduledStart)||!Number.isFinite(scheduledEnd)||scheduledEnd<=scheduledStart)){
-   setError('Enter a valid start and an end after it, or clear both fields.');return;
-  }
-  setError('');save({scheduledStart,scheduledEnd});
+  const schedule=readSchedule(new FormData(e.currentTarget),zone);
+  if(schedule.error){setError(schedule.error);return;}
+  setError('');save(schedule.fields);
  }}>
   <label>Scheduled start<ZonedInput name="start" zone={zone} toInstant={toInstant} initial={localValue(task.scheduledStart,zone)}/></label>
   <label>Scheduled end<ZonedInput name="end" zone={zone} toInstant={toInstant} initial={localValue(task.scheduledEnd,zone)}/></label>
   <button type="submit">Save schedule</button>
-  {!task.workflowGroup&&<small>Set both times to reserve a fixed slot. Clear both to schedule automatically.</small>}
+  {!task.workflowGroup&&<small>Enter one time to estimate the other, or both for a fixed slot. Clear both to schedule automatically.</small>}
   {error&&<p className="error" role="alert">{error}</p>}
  </form>;
 }

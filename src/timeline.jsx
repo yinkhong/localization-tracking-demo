@@ -1,3 +1,4 @@
+import {scheduleLabel} from './auto-schedule';
 import React, {useState} from 'react';
 import {zones} from './data';
 import {formatZoned} from './time-zone';
@@ -115,7 +116,7 @@ export function ResourceTimeline({tasks, active, now, zone, date, navigate, toIn
  const dayLength=dayEnd-dayStart;
  const schedule=workPlan?.entries??[];
  const entries=[...timelineItems(tasks,active,now),...schedule.map(item=>({...item,startedAt:item.start,endedAt:item.end,
-  style:item.conflict?'scheduled-conflict':'planned',label:item.source==='Fixed'?(item.conflict?'Fixed · overlap':'Fixed'):'Auto · '+item.source}))];
+  style:item.conflict?'scheduled-conflict':'planned',label:item.conflict?'Fixed · overlap':scheduleLabel(item.source)}))];
  const members = person ? [{name:'',team:'',members:[person]}] : roster.filter(g => (team==='All teams' || g.team===team) && (g.kind!=='team'||g.members.length));
  const dayEntries=entries.filter(e => e.startedAt < dayEnd && (e.end > dayStart || e.startedAt >= dayStart));
  return <section className="panel resource">
@@ -133,7 +134,7 @@ export function ResourceTimeline({tasks, active, now, zone, date, navigate, toIn
      <td><button type="button" className="link" onClick={()=>navigate('Task',item.task.id)}>{item.task.file}</button>
       <small>{typeLabel(item.task.type)} · {item.task.id}</small></td>
      <td>{date(item.start)}</td><td>{date(item.end)}</td>
-     <td>{item.source==='Fixed'?'Fixed':item.source==='Deadline'?'Auto · deadline':'Auto · FIFO'}
+     <td>{scheduleLabel(item.source)}
       {item.conflict&&<small className="error">Overlaps another fixed booking</small>}</td>
     </tr>)}</tbody>
    </table></div>:<p className="empty">No tasks scheduled for this day.</p>}

@@ -1,3 +1,4 @@
+import {scheduleLabel} from './auto-schedule';
 import React, {useState} from 'react';
 import {formatMinutes,zones} from './data';
 import {formatZoned,zoneCode} from './time-zone';
@@ -93,7 +94,7 @@ export function Productivity({workPlan,tasks,timers,statuses,now,teamGroups,prof
   shiftWindows(startDay,endDay,shifts[name]??defaultShift(profiles[name].zone),zones,toInstant,zone,timeOff[name])]));
  const events=workEvents(tasks,timers,statuses,now).concat((workPlan?.entries??[]).map(item=>({
   ...item,kind:'scheduled',member:item.operator,detail:item.conflict?'Fixed booking overlaps another fixed booking':
-   item.source==='Fixed'?'Fixed':'Auto · '+item.source,
+   scheduleLabel(item.source),
  })));
  for(const name of Object.keys(profiles)){
   const planned=(breakPlans[name]??[]).map(item=>({...item,kind:'plannedBreak',member:name}));
