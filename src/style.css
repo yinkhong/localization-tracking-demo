@@ -418,3 +418,13 @@ button.workflow-icon:disabled { cursor:default; opacity:.5; }
 .operator-person-icon::after { content:''; position:absolute; inset:8px 1px 0; border:1.5px solid currentColor; border-radius:7px 7px 2px 2px; }
 .file-workflow[data-subtasks=true] { border:0; border-radius:0; }
 .file-workflow[data-subtasks=true]>summary { display:none; }
+
+.profile-scheduled-work { padding:0 16px 12px; }
+.profile-scheduled-work h3 { font-size:1rem; margin:0 0 8px; }
+.profile-scheduled-work table th,.profile-scheduled-work table td { white-space:nowrap; }
+.profile-scheduled-work .empty { padding:8px 0; }
+.schedule-notes { margin-top:10px; font-size:.87rem; }
+.schedule-notes summary { cursor:pointer; font-weight:650; }
+.schedule-notes li { margin-top:5px; }
+.schedule-notes li span { color:var(--muted); margin-inline-start:5px; }
+.scheduled-conflict { background:#a84049; }

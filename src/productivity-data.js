@@ -77,7 +77,7 @@ function unionMinutes(intervals){
 export const isCancelled = (task,statuses) => [task.status,statuses.find(status=>status.id===task.status)?.label]
  .some(value=>/\bcancell?ed\b/i.test(value??''));
 
-export function workEvents(tasks,timers,statuses,now,archivedFiles){
+export function workEvents(tasks,timers,statuses,now){
  const parents=new Set(tasks.map(task=>task.parentTask).filter(Boolean));
  const active=new Map(timers.map(timer=>[timer.id,timer]));
  const phase=new Map(statuses.map(status=>[status.id,status.group]));
@@ -95,10 +95,6 @@ export function workEvents(tasks,timers,statuses,now,archivedFiles){
   const completedBy=task.completedBy||ending?.operator||task.person;
   if(!parents.has(task.id)&&completed&&completedBy&&Number.isFinite(completeAt)){
    events.push({kind:'completed',task,member:completedBy,start:completeAt,end:completeAt});
-  }
-  if(!parents.has(task.id)&&task.person&&!completed&&!archivedFiles.has(task.fileId)&&
-     Number.isFinite(task.scheduledStart)&&Number.isFinite(task.scheduledEnd)&&task.scheduledEnd>task.scheduledStart){
-   events.push({kind:'scheduled',task,member:task.person,start:task.scheduledStart,end:task.scheduledEnd});
   }
   return events;
  });

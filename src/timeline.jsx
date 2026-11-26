@@ -1,4 +1,3 @@
-import {statusGroup} from './status';
 import React, {useState} from 'react';
 import {zones} from './data';
 import {formatZoned} from './time-zone';
@@ -95,47 +94,54 @@ function hourLabel(timestamp, zone) {
  return formatZoned(timestamp,zone,{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 }
 
-function timelineItems(tasks, active, now, includePlan, statuses) {
+function timelineItems(tasks, active, now) {
  return tasks.flatMap(task => {
   const entries = taskSessions(task, active).map(session => ({...session, task,
    end:session.endedAt ?? Math.max(now, session.startedAt),
    style:session.closedWith==='Completed' ? 'complete' : session.endedAt ? 'worked' : 'running',
    label:session.closedWith || 'Running',
   }));
-  if (includePlan && task.person && statusGroup(statuses,task.status)!=='Complete') {
-   const start=task.scheduledStart ?? Date.parse(task.due);
-   if (Number.isFinite(start)) entries.push({task, operator:task.person, startedAt:start,
-    end:task.scheduledEnd ?? start, endedAt:task.scheduledEnd ?? start, style:'planned',
-    label:task.scheduledStart ? 'Scheduled' : 'Assigned · due'});
-  }
   return entries;
  });
 }
 
-export function ResourceTimeline({tasks, active, now, zone, date, navigate, toInstant, person,statuses,typeLabel=id=>id,groups:roster=groups}) {
+export function ResourceTimeline({tasks, active, now, zone, date, navigate, toInstant, person,workPlan,typeLabel=id=>id,groups:roster=groups}) {
  const teams = [...new Set(roster.map(g => g.team))];
  const [team, setTeam] = useState('All teams');
- const [day, setDay] = useState(() => {
-  const sessions = timelineItems(tasks, active, now, false,statuses).filter(entry => person && entry.operator===person);
-  const liveSessions = sessions.filter(entry => !entry.sample);
-  const latest = Math.max(0, ...(liveSessions.length ? liveSessions : sessions).map(entry => entry.startedAt));
-  return localDay(person && latest ? latest : person ? Date.now() : Date.parse('2026-11-24T18:00:00Z'), zone);
- });
+ const [day, setDay] = useState(()=>localDay(Date.now(),zone));
  const followingDay=day && new Date(Date.parse(day+'T12:00:00Z') + 86400000).toISOString().slice(0,10);
  const dayStart=day && Date.parse(toInstant(day+'T00:00',zone));
  const dayEnd=followingDay && Date.parse(toInstant(followingDay+'T00:00',zone));
  const dayLength=dayEnd-dayStart;
- const entries=timelineItems(tasks,active,now,!person,statuses);
+ const schedule=workPlan?.entries??[];
+ const entries=[...timelineItems(tasks,active,now),...schedule.map(item=>({...item,startedAt:item.start,endedAt:item.end,
+  style:item.conflict?'scheduled-conflict':'planned',label:item.source==='Fixed'?(item.conflict?'Fixed · overlap':'Fixed'):'Auto · '+item.source}))];
  const members = person ? [{name:'',team:'',members:[person]}] : roster.filter(g => (team==='All teams' || g.team===team) && (g.kind!=='team'||g.members.length));
  const dayEntries=entries.filter(e => e.startedAt < dayEnd && (e.end > dayStart || e.startedAt >= dayStart));
  return <section className="panel resource">
   <div className="panel-header filters"><div><h2>{person ? 'Work timeline' : 'Team resources'}</h2>
-   <p>{person ? 'Each uninterrupted period of work appears as a separate session.' : 'Scheduled work, due milestones, and work sessions by team and subteam.'}</p></div>
+   <p>{person ? 'Scheduled work and timed sessions for the selected day.' : 'Scheduled work and timed sessions by team and subteam.'}</p></div>
    <div className="timeline-controls">{!person&&<label>Team <select value={team} onChange={e=>setTeam(e.target.value)}>
     {['All teams',...teams].map(name=><option key={name}>{name}</option>)}</select></label>}
     <label>Day <input type="date" value={day} onChange={e=>setDay(e.target.value)}/></label>
     <button onClick={()=>setDay(localDay(Date.now(), zone))}>Today</button></div></div>
-  <div className="timeline-legend">{[[!person&&'Scheduled / due','planned'],['Paused session','worked'],['Completed session','complete'],['Running','running']].filter(([label])=>label).map(([label,style])=><span key={style}><i className={style}/>{label}</span>)}</div>
+  <div className="timeline-legend">{[['Scheduled','planned'],['Fixed overlap','scheduled-conflict'],['Paused session','worked'],['Completed session','complete'],['Running','running']].filter(([label])=>label).map(([label,style])=><span key={style}><i className={style}/>{label}</span>)}</div>
+  {person&&<div className="profile-scheduled-work"><h3>Scheduled work</h3>
+   {schedule.some(item=>item.operator===person&&item.start<dayEnd&&item.end>dayStart)?<div className="table-wrap"><table>
+    <thead><tr><th>Task</th><th>Start</th><th>End</th><th>Schedule</th></tr></thead>
+    <tbody>{schedule.filter(item=>item.operator===person&&item.start<dayEnd&&item.end>dayStart).map(item=><tr key={item.task.id+'-'+item.start}>
+     <td><button type="button" className="link" onClick={()=>navigate('Task',item.task.id)}>{item.task.file}</button>
+      <small>{typeLabel(item.task.type)} · {item.task.id}</small></td>
+     <td>{date(item.start)}</td><td>{date(item.end)}</td>
+     <td>{item.source==='Fixed'?'Fixed':item.source==='Deadline'?'Auto · deadline':'Auto · FIFO'}
+      {item.conflict&&<small className="error">Overlaps another fixed booking</small>}</td>
+    </tr>)}</tbody>
+   </table></div>:<p className="empty">No tasks scheduled for this day.</p>}
+   {workPlan?.issues.some(item=>item.task.person===person)&&<details className="schedule-notes"><summary>Scheduling notes</summary>
+    <ul>{workPlan.issues.filter(item=>item.task.person===person).map(({task,reason})=><li key={task.id+reason}>
+     <button type="button" className="link" onClick={()=>navigate('Task',task.id)}>{task.file} · {typeLabel(task.type)}</button> <span>{reason}</span></li>)}</ul>
+   </details>}
+  </div>}
   {dayLength>0 && <div className="timeline-scroll">
    <div className="resource-grid">
     <div className="resource-axis"><span>Operator</span><div>{[0,.25,.5,.75].map(fraction =>

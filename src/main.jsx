@@ -1,4 +1,4 @@
-import React, {useEffect,useState} from 'react';
+import React, {useEffect,useMemo,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {demoRequests,demoTasks,demoDefects,estimate,formatMinutes,operatorRanking,zones} from './data';
 import {audit, bootstrapTimeline, Metadata, patchRecord, ResourceTimeline, SessionList, TimelineAdmin, timelineRoles} from './timeline';
@@ -17,6 +17,7 @@ import {Productivity,ShiftSettings} from './productivity';
 import {defaultShift,isCancelled} from './productivity-data';
 import {Breaks,CorrectTime,TodayBreaks} from './time-entry-ui';
 import {correctTaskTime,defaultCorrectionAccess,planBreak,todayBreaks} from './time-entry';
+import {planWork} from './auto-schedule';
 import {useFloatingTimer} from './floating-timer';
 import './style.css';
 
@@ -63,12 +64,19 @@ function App(){
  const canManage = role !== 'Operator';
  const canSeeResources = Boolean(timelineAccess[role]);
  const people = Object.keys(profiles);
+ const planningMinute=Math.floor(now/60000)*60000;
+ const showSchedule=['Profile','Planning','Productivity'].includes(view);
+ const workPlan=useMemo(()=>showSchedule?planWork({
+  tasks,requests,statuses,shifts:{...shiftDefaults,...shifts},leave:timeOff,breakPlans,activeBreaks,timers,
+  now:planningMinute,toInstant,
+ }):null,[state,planningMinute,showSchedule]);
+
  const shiftEditors=role==='Manager'?people:role==='Team lead'?
   [...new Set(teamGroups.filter(group=>group.lead===profile).flatMap(group=>group.kind==='team'?teamMembers(teamGroups,group.team):group.members))]:[];
  const accountLabel=id=>accounts.find(account=>account.id===id)?.label??id;
  useEffect(()=>{try{localStorage.setItem(dataKey,JSON.stringify(state));}catch{setNotice('Browser storage is full. These changes are available for this session.');}},[state]);
  useEffect(()=>{
-  if(!['Productivity','Profile','My work'].includes(view)&&!Object.keys(activeTimers).length&&!anyBreak)return;
+  if(!['Productivity','Profile','My work','Planning'].includes(view)&&!Object.keys(activeTimers).length&&!anyBreak)return;
   setNow(Date.now());
   const id=setInterval(()=>setNow(Date.now()),Object.keys(activeTimers).length||anyBreak?1000:10000);
   return()=>clearInterval(id);
@@ -507,7 +515,7 @@ function App(){
  <div className="overview-grid"><section className="panel chart"><div className="panel-header"><div><h2>Quality trend</h2><p>Confirmed defects per 100 inspected pages</p></div><span className="subtle">Last 4 weeks</span></div><div className="bars" aria-label="Example quality trend: 1.2, 0.9, 0.7, 0.6"><div className="chart-grid"/>{[1.2,.9,.7,.6].map((v,i)=><div className="bar-column" key={i}><div style={{height:(v/1.2)*86+'%'}} className="chart-bar"><span>{v.toFixed(1)}</span></div><small>Week {i+1}</small></div>)}</div></section>
  <section className="panel attention"><div className="panel-header"><div><h2>Needs attention</h2><p>Delivery risks and next actions</p></div></div>{riskSummary.map(r=><div className="attention-item" key={r.id}><div><button className="link record" onClick={()=>navigate('Request',r.id)}>{r.title}</button><small>{r.id} · Due {date(r.due)}</small></div>{badge('At risk')}</div>)}<div className="attention-item"><div><button className="link record" onClick={()=>navigate('Planning')}>Unassigned work</button><small>Review available operators</small></div>{badge('Ready')}</div><div className="attention-item"><div><button className="link record" onClick={()=>navigate('Defects')}>Defect review queue</button><small>Open related evidence and tasks</small></div>{badge('Under review')}</div></section></div>
  <section className="panel"><div className="panel-header"><h2>Recent requests</h2><button onClick={()=>navigate('Requests')}>View all requests</button></div>{requestTable(requests.slice(0,4))}</section></>}
- {view==='Productivity'&&role==='Manager'&&<Productivity tasks={allTasks} shifts={{...shiftDefaults,...shifts}} {...{timers,statuses,now,teamGroups,profiles,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff,breakPlans,breakLogs,activeBreaks}}/>}
+ {view==='Productivity'&&role==='Manager'&&<Productivity workPlan={workPlan} tasks={allTasks} shifts={{...shiftDefaults,...shifts}} {...{timers,statuses,now,teamGroups,profiles,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff,breakPlans,breakLogs,activeBreaks}}/>}
  {view==='Reporting'&&canManage&&<Reporting taskStatuses={statuses} {...{requests,tasks,requestStatuses,taskTypes,people,typeLabel,date,zone,navigate,teamGroups,accountLabel}}/>}
  {view==='Overview'&&role==='Manager'&&<DefectPerformance records={defects} profiles={profiles} groups={teamGroups} accountLabel={accountLabel}/>}
  {view==='Requests'&&<section className="panel"><div className="panel-header filters">{searchInput('Search requests')}{selectFilter(['All','At risk','On track','Unscheduled'])}</div>{requestTable(requests.filter(r=>search(r.title,r.id,accountLabel(r.account))&&(filter==='All'||r.risk===filter)))}</section>}
@@ -538,10 +546,10 @@ function App(){
  {view==='Planning'&&canManage&&<>
  {canSeeResources&&<div className="planning-tabs">{tabs(['Dispatch','Team resources'],projectTab==='Team resources'?'Team resources':'Dispatch',setProjectTab)}</div>}
  {projectTab==='Team resources'&&canSeeResources ?
-  <ResourceTimeline active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/> :
+  <ResourceTimeline workPlan={workPlan} active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/> :
   <section className="panel"><div className="panel-header filters">{searchInput('Search ready work')}{selectFilter(['All','Unassigned','Assigned'])}</div>{taskTable(tasks.filter(t=>!parents.has(t.id)&&phase(t.status)==='To-do'&&!taskBlocked(t)&&search(t.file,typeLabel(t.type),t.request)&&(filter==='All'||(filter==='Assigned')===Boolean(t.person))))}</section>}
  </>}
- {view==='Planning'&&!canManage&&canSeeResources&&<ResourceTimeline active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/>}
+ {view==='Planning'&&!canManage&&canSeeResources&&<ResourceTimeline workPlan={workPlan} active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/>}
  {view==='Profile'&&<>
   <section className="panel"><div className="panel-header"><h2>Timer preferences</h2></div>
    <label className="timer-preference"><input type="checkbox" checked={autoFloatTaskTimer}
@@ -550,7 +558,7 @@ function App(){
    </label>
   </section>
   <section className="panel break-section"><TodayBreaks {...{dailyBreaks,date,clock}} expanded/></section>
-  <ResourceTimeline key={profile} person={profile} active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/>
+  <ResourceTimeline key={profile} workPlan={workPlan} person={profile} active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/>
  </>}
  {view==='Teams'&&canManage&&<>
  {shiftEditors.length>0&&<ShiftSettings people={shiftEditors} profiles={profiles} timeOff={timeOff}
@@ -814,6 +822,7 @@ function ScheduleFields({task, zone, save}){
   <label>Scheduled start<ZonedInput name="start" zone={zone} toInstant={toInstant} initial={localValue(task.scheduledStart,zone)}/></label>
   <label>Scheduled end<ZonedInput name="end" zone={zone} toInstant={toInstant} initial={localValue(task.scheduledEnd,zone)}/></label>
   <button type="submit">Save schedule</button>
+  {!task.workflowGroup&&<small>Set both times to reserve a fixed slot. Clear both to schedule automatically.</small>}
   {error&&<p className="error" role="alert">{error}</p>}
  </form>;
 }

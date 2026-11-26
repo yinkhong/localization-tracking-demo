@@ -74,7 +74,7 @@ function TimeOff({zone,entries,update}){
  </div>;
 }
 
-export function Productivity({tasks,timers,statuses,now,teamGroups,profiles,shifts,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff,breakPlans,breakLogs,activeBreaks}){
+export function Productivity({workPlan,tasks,timers,statuses,now,teamGroups,profiles,shifts,zone,toInstant,navigate,typeLabel,archivedFiles,timeOff,breakPlans,breakLogs,activeBreaks}){
  const [day,setDay]=useState(()=>dayAt(now,zones[zone]));
  const [mode,setMode]=useState('Day'),[customEnd,setCustomEnd]=useState(day);
  const [team,setTeam]=useState(''),[member,setMember]=useState('');
@@ -91,7 +91,10 @@ export function Productivity({tasks,timers,statuses,now,teamGroups,profiles,shif
  }
  const windows=Object.fromEntries(Object.keys(profiles).map(name=>[name,
   shiftWindows(startDay,endDay,shifts[name]??defaultShift(profiles[name].zone),zones,toInstant,zone,timeOff[name])]));
- const events=workEvents(tasks,timers,statuses,now,archivedFiles);
+ const events=workEvents(tasks,timers,statuses,now).concat((workPlan?.entries??[]).map(item=>({
+  ...item,kind:'scheduled',member:item.operator,detail:item.conflict?'Fixed booking overlaps another fixed booking':
+   item.source==='Fixed'?'Fixed':'Auto · '+item.source,
+ })));
  for(const name of Object.keys(profiles)){
   const planned=(breakPlans[name]??[]).map(item=>({...item,kind:'plannedBreak',member:name}));
   const logged=(breakLogs[name]??[]).map(item=>({...item,kind:'actualBreak',member:name}));
