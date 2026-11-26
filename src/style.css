@@ -200,8 +200,8 @@ button.lane-caption { font-size:.78rem; padding-left:5px; }
 .crumb li+li::before {content:'/'; margin-inline-end:8px; color:#777e93}
 .crumb li button {white-space:normal}
 .crumb li span {margin:0; color:inherit}
-.workflow-table tr.drag-sequence td {box-shadow:inset 0 2px #685bc4}
-.workflow-table tr.drag-after td {box-shadow:inset 0 -2px #685bc4}
+.workflow-table tr.drag-before td {box-shadow:inset 0 2px #685bc4}
+.workflow-table tr.drag-sequence td {box-shadow:inset 0 -2px #685bc4}
 .workflow-table tr.drag-inside td {background:#eeeafb}
 .root-drop {border:1px dashed #7970bd; color:#4f439b; border-radius:6px; padding:12px; margin:8px 12px; background:#f8f6ff; font-size:.85rem}
 .org-setup {display:flex; flex-wrap:wrap; align-items:end; gap:10px; padding:0 16px 16px}
@@ -362,9 +362,9 @@ button.team-event:hover,button.team-event:focus-visible { outline:2px solid #172
 @media(max-width:700px) { .admin-grid { grid-template-columns:minmax(0,1fr); } }
 
 .workflow-drop-hint { position:absolute; z-index:2; inset-inline-start:20px; pointer-events:none; white-space:nowrap; background:#4847cd; color:white; border-radius:4px; padding:3px 7px; font-size:.72rem; }
-.workflow-drop-sequence { inset-block-start:1px; }
+.workflow-drop-before { inset-block-start:1px; }
 .workflow-drop-inside { inset-block-start:50%; transform:translateY(-50%); }
-.workflow-drop-after { inset-block-end:1px; }
+.workflow-drop-sequence { inset-block-end:1px; }
 
 .file-workflow>summary { display:flex; align-items:center; gap:7px; padding-block:9px; }
 .file-workflow>summary::-webkit-details-marker { display:none; }
@@ -406,3 +406,5 @@ button.team-event:hover,button.team-event:focus-visible { outline:2px solid #172
 .status-menu-editor .file-danger { color:#9d302e; }
 
 body:has(.overlay) .workflow-bulk { z-index:2; }
+
+.recorded-effort { white-space:nowrap; font-variant-numeric:tabular-nums; }

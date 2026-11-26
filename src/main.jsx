@@ -48,6 +48,11 @@ function App(){
  const active=activeTimers[profile];
  const timers=Object.values(activeTimers);
  const isRunning=id=>timers.some(timer=>timer.id===id);
+ const recordedSeconds=task=>{
+  const running=timers.find(timer=>timer.id===task.id);
+  return (task.spent??0)+(running?Math.max(0,Math.floor((now-running.started)/1000)):0);
+ };
+ const recordedEffort=task=>clock(recordedSeconds(task));
  const parents=parentTaskIds(tasks);
  const phase=id=>statusGroup(statuses,id);
  const statusBadge=(id,catalog=statuses)=><span className={'badge '+statusColor(statusGroup(catalog,id))} title={statusGroup(catalog,id)}><i/>{catalog.find(status=>status.id===id)?.label??id}</span>;
@@ -119,7 +124,7 @@ function App(){
  const requestFiles=req?workflowFiles.filter(f=>f.request===req.id&&!f.archivedAt):[];
  const removedFiles=req?workflowFiles.filter(f=>f.request===req.id&&f.archivedAt):[];
  const activeTask=active&&taskOf(active.id);
- const elapsed=activeTask?(activeTask.spent??0)+Math.max(0,Math.floor((now-active.started)/1000)):0;
+ const elapsed=activeTask?recordedSeconds(activeTask):0;
  const taskTimerKey=(id,started)=>'task:'+profile+':'+id+':'+started;
  const breakTimerKey=id=>'break:'+profile+':'+id;
  const taskDeadline=activeTask?.due?new Date(activeTask.due).getTime():null;
@@ -422,7 +427,7 @@ function App(){
   return <div className="table-wrap"><table><thead><tr><th>Request</th><th>Account</th><th>Due</th><th>Forecast</th><th>Status</th><th>Delivery risk</th></tr></thead><tbody>{items.map(r=><tr key={r.id}><td><button className="link record" onClick={()=>navigate('Request',r.id)}>{r.title}</button><small>{r.id} · {r.files} files</small></td><td>{accountLabel(r.account)}</td><td>{date(r.due)}</td><td>{date(r.forecast)}</td><td>{statusBadge(r.status,requestStatuses)}</td><td>{badge(r.risk)}</td></tr>)}</tbody></table>{!items.length&&<div className="empty">No matching requests.</div>}</div>;
  }
  function taskTable(items){
-  return <div className="table-wrap"><table><thead><tr><th>File / operation</th><th>Assignee</th><th>Due</th><th>Effort</th><th>Status</th><th>Action</th></tr></thead><tbody>{items.map(t=>{const e=estimate(requestOf(t.request)?.account,t.type,t.pages);return <tr key={t.id}><td><button className="link record" onClick={()=>navigate('Task',t.id)}>{t.file}</button><small>{t.parentTask?'Subtask · ':''}{typeLabel(t.type)} · {t.id}</small></td><td>{parents.has(t.id)?'Subtasks only':t.person||'Unassigned'}</td><td>{date(t.due)}</td><td>{parents.has(t.id)?'—':formatMinutes(e.minutes)}{!parents.has(t.id)&&e.source==='Historical'&&<small>Historical</small>}</td><td>{statusBadge(t.status)}</td><td>{taskAction(t)}</td></tr>;})}</tbody></table>{!items.length&&<div className="empty">No matching tasks.</div>}</div>;
+  return <div className="table-wrap"><table><thead><tr><th>File / operation</th><th>Assignee</th><th>Due</th><th title="Estimated effort">Est.</th><th title="Recorded work time">Recorded</th><th>Status</th><th>Action</th></tr></thead><tbody>{items.map(t=>{const e=estimate(requestOf(t.request)?.account,t.type,t.pages);return <tr key={t.id}><td><button className="link record" onClick={()=>navigate('Task',t.id)}>{t.file}</button><small>{t.parentTask?'Subtask · ':''}{typeLabel(t.type)} · {t.id}</small></td><td>{parents.has(t.id)?'Subtasks only':t.person||'Unassigned'}</td><td>{date(t.due)}</td><td>{parents.has(t.id)?'—':formatMinutes(e.minutes)}{!parents.has(t.id)&&e.source==='Historical'&&<small>Historical</small>}</td><td className="recorded-effort">{t.workflowGroup?'—':recordedEffort(t)}</td><td>{statusBadge(t.status)}</td><td>{taskAction(t)}</td></tr>;})}</tbody></table>{!items.length&&<div className="empty">No matching tasks.</div>}</div>;
  }
  function defectTable(items){
  return <div className="table-wrap"><table><thead><tr><th>Finding</th><th>Related request</th><th>Severity</th><th>Status</th></tr></thead><tbody>{items.map(d=><tr key={d.id}><td><button className="link record" onClick={()=>navigate('Defect',d.id)}>{d.title}</button><small>{d.id}</small></td><td><button className="link" onClick={()=>navigate('Request',d.request)}>{d.request}</button></td><td>{badge(d.severity)}</td><td>{badge(d.status)}</td></tr>)}</tbody></table>{!items.length&&<div className="empty">No findings to show.</div>}</div>;
@@ -513,7 +518,7 @@ function App(){
  {['Tasks','Files & workflows'].includes(projectTab)&&<FileWorkflows files={requestFiles} tasks={requestTasks} account={req.account}
   openTask={id=>navigate('Task',id)} locked={isRunning} addTask={file=>setDialog({kind:'newtask',request:req.id,file})}
   editFile={file=>setDialog({kind:'renamefile',file})} deleteFile={file=>setDialog({kind:'deletefile',file})}
-  addSubtask={addSubtask} canAddSubtask={canAddSubtask} orders={workflowOrders} deleteTasks={confirmTaskDeletion} editSelected={(ids,field)=>setDialog({kind:'bulk-edit',ids,field})} {...{moveTask,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,removeDependency}} showError={setWorkflowError}
+  addSubtask={addSubtask} canAddSubtask={canAddSubtask} orders={workflowOrders} deleteTasks={confirmTaskDeletion} editSelected={(ids,field)=>setDialog({kind:'bulk-edit',ids,field})} {...{moveTask,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,removeDependency,recordedEffort}} showError={setWorkflowError}
   {...{people,canManage,editable,changeTask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant}}/>}
  {canManage&&['Tasks','Files & workflows'].includes(projectTab)&&removedFiles.length>0&&
   <details className="panel removed-files"><summary>Deleted files ({removedFiles.length})</summary>
@@ -569,7 +574,7 @@ function App(){
  value={task.person} onChange={e=>changeTask(task.id,{person:e.target.value})}><option value="">Unassigned</option>{people.map(person=><option key={person}>{person}</option>)}</select>:<strong>{task.person||'Unassigned'}</strong>}</div><div><small>Due</small>{canManage?<InlineDue task={task} zone={zone} showError={setWorkflowError} localValue={localValue} toInstant={toInstant} save={fields=>changeTask(task.id,fields)}/>:<strong>{date(task.due)}</strong>}</div>
  {canManage&&<div><small>Task type</small>{task.parentTask?<strong>{typeLabel(task.type)}</strong>:<TaskTypePicker value={task.type} taskTypes={taskTypes} editor={taskTypeEditor} disabled={isRunning(task.id)} onChange={type=>changeTask(task.id,{type})}/>}</div>}
  {!taskIsParent&&editable(task)&&<div><small>Status</small><TaskStatus task={task} statuses={statuses} locked={isRunning(task.id)} blocked={taskBlocked(task)} editor={taskStatusEditor} save={fields=>changeTask(task.id,fields)}/></div>}
- {taskIsParent&&<div><small>Progress</small><strong>{tasks.filter(t=>t.parentTask===task.id&&phase(t.status)==='Complete').length} of {tasks.filter(t=>t.parentTask===task.id).length} subtasks complete</strong></div>}<div><small>Recorded effort</small><strong>{clock((task.spent??0)+(isRunning(task.id)?Math.max(0,Math.floor((now-timers.find(timer=>timer.id===task.id).started)/1000)):0))}</strong></div></div>
+ {taskIsParent&&<div><small>Progress</small><strong>{tasks.filter(t=>t.parentTask===task.id&&phase(t.status)==='Complete').length} of {tasks.filter(t=>t.parentTask===task.id).length} subtasks complete</strong></div>}<div><small>Recorded effort</small><strong>{recordedEffort(task)}</strong></div></div>
  <TaskFields key={task.id+':'+task.pages} task={task} account={requestOf(task.request)?.account} editable={editable(task)} save={pages=>{changeTask(task.id,{pages});setNotice('Page count saved');}}/>
  {canManage&&<ScheduleFields key={task.id} task={task} zone={zone} save={fields=>{
   changeTask(task.id,fields);setNotice('Schedule saved');

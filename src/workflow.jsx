@@ -245,7 +245,7 @@ export const bulkWorkflowFields={type:'Type',person:'Assignee',status:'Status',p
  schedule:'Schedule',dependsOn:'Prerequisite',parentTask:'Parent'};
 
 export function FileWorkflows({files,tasks,account,people,canManage,editable,locked,changeTask,openTask,
- addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask,deleteTasks,removeDependency,editSelected}) {
+ addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask,deleteTasks,removeDependency,editSelected,recordedEffort}) {
  const [drag,setDrag]=useState(null);
  const [target,setTarget]=useState(null);
  const [selection,setSelection]=useState(()=>new Set());
@@ -260,7 +260,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
  function placement(event){
   const rect=event.currentTarget.getBoundingClientRect();
   const fraction=(event.clientY-rect.top)/rect.height;
-  return fraction<.27?'sequence':fraction>.73?'after':'inside';
+  return fraction<.27?'before':fraction>.73?'sequence':'inside';
  }
  function drop(file,event,id,mode=placement(event)){
   event.preventDefault();
@@ -304,7 +304,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      <input type="checkbox" aria-label={'Select all tasks for '+file.name} checked={allSelected} data-visible={selected.length>0}
       ref={input=>{if(input)input.indeterminate=selected.length>0&&!allSelected;}}
       onChange={event=>select(ids,event.target.checked)}/>
-    </label></th>}<th>Operation</th><th>Task type</th><th>Operator</th><th>Pages</th><th>Due</th><th>Effort</th><th>Status</th><th>Actions</th></tr></thead>
+    </label></th>}<th>Operation</th><th>Task type</th><th>Operator</th><th>Pages</th><th>Due</th><th title="Estimated effort">Est.</th><th title="Recorded work time">Recorded</th><th>Status</th><th>Actions</th></tr></thead>
     <tbody>{rows.map((task,rowIndex)=>{
      const blockers=incompletePredecessors(task,tasks,statuses);
      const blocked=blockers.length>0;
@@ -334,7 +334,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
         className="workflow-prerequisite-line" data-first={first} data-last={last} data-branch={branch}
         style={{'--prerequisite-lane':lane*9+'px'}}/>)}
        <div className="workflow-operation" style={{marginInlineStart:Math.min(depth,5)*18}} data-movable={canManage&&items.length>1}>
-       {canManage&&(items.length>1||task.parentTask)&&<button type="button" className="drag-handle" draggable title="Drop at the top to start after this task, in the center to nest, or at the bottom to reorder. Up and Down reorder. Left promotes to top level."
+       {canManage&&(items.length>1||task.parentTask)&&<button type="button" className="drag-handle" draggable title="Drop at the top to reorder before this task, in the center to group, or at the bottom to depend on this task. Up and Down reorder. Left promotes to top level."
         aria-label={'Reorder '+task.id} onDragStart={event=>{
          event.dataTransfer.setData('text/plain',task.id);event.dataTransfer.effectAllowed='move';setDrag({file:file.id,id:task.id});
         }} onDragEnd={()=>{setDrag(null);setTarget(null);}} onKeyDown={event=>{
@@ -351,7 +351,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
          <span aria-hidden="true">↳ </span>{typeLabel(parentTask.type)}{parentTask.workflowGroup?' group':' - '+parentTask.id}
         </button></small>}
        {targetMode&&<span className={'workflow-drop-hint workflow-drop-'+targetMode}>
-        {targetMode==='sequence'?'Start after '+task.id:targetMode==='inside'?(draggedTask?.type===task.type&&!parent?'Group with ':'Make a subtask of ')+(task.workflowGroup?typeLabel(task.type)+' group':task.id):'Reorder below '+task.id}
+        {targetMode==='sequence'?'Start after '+task.id:targetMode==='inside'?(draggedTask?.type===task.type&&!parent?'Group with ':'Make a subtask of ')+(task.workflowGroup?typeLabel(task.type)+' group':task.id):'Reorder before '+task.id}
         {targetMode==='sequence'&&draggedTask?.dependsOn&&draggedTask.dependsOn!==task.id&&
          ' · replaces '+draggedTask.dependsOn}
        </span>}
@@ -368,6 +368,7 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
       <td>{task.workflowGroup?'—':editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>
       <td>{task.workflowGroup?'—':canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
       <td>{parent?'—':formatMinutes(effort.minutes)}{!parent&&effort.source==='Historical'&&<small>Historical</small>}</td>
+      <td className="recorded-effort">{task.workflowGroup?'—':recordedEffort(task)}</td>
       <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save} editor={taskStatusEditor}/>:statusBadge(task.status)}</td>
       <td><div className="workflow-actions">{taskAction(task)}{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}{canManage&&!task.workflowGroup&&<button type="button" className="file-danger" aria-label={'Delete task '+task.id} onClick={()=>deleteTasks([task.id])}>Delete</button>}</div></td>
      </tr>;

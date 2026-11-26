@@ -22,6 +22,10 @@ export function moveWorkflowTask(tasks,file,order,source,target,placement,status
  const item=tasks.find(task=>task.id===source&&task.fileId===file);
  const anchor=tasks.find(task=>task.id===target&&task.fileId===file);
  if(!item||placement!=='root'&&(!anchor||item===anchor))return {};
+ if(placement==='before'||placement==='after'){
+  const result=reorderWorkflowRows(tasks.filter(task=>task.fileId===file),order,source,target,placement==='after');
+  return result.order?{...result,tasks}:result;
+ }
  const existingGroup=tasks.find(task=>task.workflowGroup&&task.id===anchor?.parentTask);
  const anchorIsParent=tasks.some(task=>task.parentTask===target);
  if(placement==='inside'&&item.type===anchor.type&&!anchorIsParent&&!existingGroup){
@@ -35,7 +39,7 @@ export function moveWorkflowTask(tasks,file,order,source,target,placement,status
   const priority=rows.flatMap(task=>task.id===anchor.id?[id,target,source]:task.id===source?[]:[task.id]);
   return {tasks:updated.tasks,order:workflowOrder(updated.tasks.filter(task=>task.fileId===file),priority).map(task=>task.id)};
  }
- const parent=placement==='root'?'':placement==='inside'?(existingGroup&&item.type===anchor.type?existingGroup.id:anchor.id):anchor.parentTask||'';
+ const parent=placement==='root'?'':placement==='inside'?(existingGroup&&item.type===anchor.type?existingGroup.id:anchor.id):item.parentTask||'';
  const predecessor=placement==='sequence'?anchor.id:item.dependsOn||'';
  let updated=tasks;
  if(parent!==(item.parentTask||'')||predecessor!==(item.dependsOn||'')){
@@ -49,8 +53,9 @@ export function moveWorkflowTask(tasks,file,order,source,target,placement,status
   const priority=workflowOrder(rows,order).filter(task=>task.id!==item.id).map(task=>task.id);
   return {tasks:updated,order:workflowOrder(rows,[...priority,item.id]).map(task=>task.id)};
  }
- const result=reorderWorkflowRows(rows,order,source,target,placement==='after'||placement==='sequence');
- return result.error?result:{...result,tasks:updated};
+ const priority=workflowOrder(tasks.filter(task=>task.fileId===file),order).map(task=>task.id).filter(id=>id!==source);
+ priority.splice(priority.indexOf(target)+1,0,source);
+ return {tasks:updated,order:workflowOrder(rows,priority).map(task=>task.id)};
 }
 
 export function removeWorkflowTasks(state,ids,timestamp,actor){
