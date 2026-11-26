@@ -2,7 +2,7 @@ import React, {useEffect,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {demoRequests,demoTasks,demoDefects,estimate,formatMinutes,operatorRanking,zones} from './data';
 import {audit, bootstrapTimeline, Metadata, patchRecord, ResourceTimeline, SessionList, TimelineAdmin, timelineRoles} from './timeline';
-import {ActivityLog, bootstrapWorkflow, demoProfiles, FileKanban, FileWorkflows, InlineDue, TaskStatus, TaskTypePicker, withActivity, ZonedInput} from './workflow';
+import {ActivityLog, bulkWorkflowFields, bootstrapWorkflow, demoProfiles, FileKanban, FileWorkflows, InlineDue, TaskStatus, TaskTypePicker, withActivity, ZonedInput} from './workflow';
 import {blockedTask, bootstrapStatuses, dependencyError, dependencyIds, initialStatuses, parentTaskIds, resolveTasks, StatusAdmin, StatusPicker, statusColor, statusGroup, workflowOrder} from './status';
 import {DefectForm, RcaBody} from './rca';
 import {Acknowledgment, bootstrapDefects, defectAttribution, defectChanges, DefectPerformance, defectSeverities, defectStatuses, canEditDefect, RcaTimeline, ReviewSelect, reviewRoles} from './defect-review';
@@ -10,7 +10,7 @@ import {formatZoned, zoneCode} from './time-zone';
 import {TaskRelationships, updateRelationships} from './task-relations';
 import {Reporting} from './reporting';
 import {defaultTaskTypes,LabelCatalog,TaskTypeAdmin} from './task-types';
-import {moveWorkflowTask,removeWorkflowTasks} from './workflow-order';
+import {bulkWorkflowUpdate,moveWorkflowTask,removeWorkflowTasks,removeEmptyWorkflowGroups} from './workflow-order';
 import {defaultTeamGroups,TeamOrg} from './team-org';
 import {normalizeTeamGroups,teamMembers} from './team-memberships';
 import {Productivity,ShiftSettings} from './productivity';
@@ -239,7 +239,8 @@ function App(){
  }
  function commit(action, update, timestamp=Date.now()){
   setState(s=>{
-   const updated=update(s,timestamp);
+   const result=update(s,timestamp);
+   const updated=result.tasks===s.tasks?result:removeEmptyWorkflowGroups(result);
    if(updated===s)return s;
    const before=new Map(s.tasks.map(task=>[task.id,task]));
    const completed=task=>task&&statusGroup(updated.statuses,task.status)==='Complete'&&!isCancelled(task,updated.statuses);
@@ -512,7 +513,7 @@ function App(){
  {['Tasks','Files & workflows'].includes(projectTab)&&<FileWorkflows files={requestFiles} tasks={requestTasks} account={req.account}
   openTask={id=>navigate('Task',id)} locked={isRunning} addTask={file=>setDialog({kind:'newtask',request:req.id,file})}
   editFile={file=>setDialog({kind:'renamefile',file})} deleteFile={file=>setDialog({kind:'deletefile',file})}
-  addSubtask={addSubtask} canAddSubtask={canAddSubtask} orders={workflowOrders} deleteTasks={confirmTaskDeletion} {...{moveTask,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,removeDependency}} showError={setWorkflowError}
+  addSubtask={addSubtask} canAddSubtask={canAddSubtask} orders={workflowOrders} deleteTasks={confirmTaskDeletion} editSelected={(ids,field)=>setDialog({kind:'bulk-edit',ids,field})} {...{moveTask,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,removeDependency}} showError={setWorkflowError}
   {...{people,canManage,editable,changeTask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant}}/>}
  {canManage&&['Tasks','Files & workflows'].includes(projectTab)&&removedFiles.length>0&&
   <details className="panel removed-files"><summary>Deleted files ({removedFiles.length})</summary>
@@ -631,7 +632,7 @@ function App(){
  </div>
  {notice&&<div className="toast" role="status">{notice}</div>}
  {dialog&&dialog.kind!=='defect'&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setDialog(null);}}><div className={'modal '+(dialog.kind==='rank'?'wide':'')} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
- <div className="dialog-head"><h2 id="dialog-title">{{request:'New request',rank:'Ranked operator suggestions',timer:'Another timer is running',newfile:'Add file',renamefile:'Rename file',deletefile:'Delete file','delete-tasks':tasksToDelete.length===1?'Delete task?':'Delete selected tasks?','confirm-task-move':'Change task type and move?',newtask:dialog.parent?'Add subtask':'Add file task'}[dialog.kind]}</h2><button aria-label="Close dialog" onClick={()=>setDialog(null)}>×</button></div>
+ <div className="dialog-head"><h2 id="dialog-title">{{request:'New request',rank:'Ranked operator suggestions',timer:'Another timer is running',newfile:'Add file',renamefile:'Rename file',deletefile:'Delete file','bulk-edit':'Set '+bulkWorkflowFields[dialog.field]+' for selected tasks','delete-tasks':tasksToDelete.length===1?'Delete task?':'Delete selected tasks?','confirm-task-move':'Change task type and move?',newtask:dialog.parent?'Add subtask':'Add file task'}[dialog.kind]}</h2><button aria-label="Close dialog" onClick={()=>setDialog(null)}>×</button></div>
  {dialog.kind==='request'&&<RequestForm zone={zone} {...{taskTypes,accounts,accountEditor}} save={values=>{
   const id='RQ-'+(Math.max(1045,...requests.map(r=>Number(r.id.split('-')[1])))+1);
   commit('Created request',(s,timestamp)=>({...s,requests:[{...values,id,status:'Ready',risk:'Unscheduled',
@@ -662,6 +663,23 @@ function App(){
   <div className="actions"><button onClick={()=>setDialog(null)}>Cancel</button>
    <button className="file-danger" onClick={()=>updateFile(dialog.file,'delete')}>Delete file</button></div>
  </>}
+ {dialog.kind==='bulk-edit'&&<BulkTaskForm key={dialog.field} {...{dialog,people,statuses,taskTypes,zone,toInstant,typeLabel,tasks}}
+  cancel={()=>setDialog(null)} save={value=>{
+   if(!canManage)return 'You need permission to edit workflows.';
+   const timestamp=Date.now();
+   const planned=bulkWorkflowUpdate(tasks,dialog.ids,dialog.field,value,statuses,timers,timestamp);
+   if(planned.error)return planned.error;
+   commit('Updated selected tasks',(s,at)=>{
+    if(s.profiles[s.profile].role==='Operator')return s;
+    const result=bulkWorkflowUpdate(s.tasks,dialog.ids,dialog.field,value,s.statuses,Object.values(s.activeTimers),at);
+    if(result.error)return s;
+    const selected=new Set(dialog.ids);
+    const defects=dialog.field==='person'&&value?s.defects.map(report=>selected.has(report.task)&&!report.operator&&report.status!=='Closed'?
+     patchRecord(report,defectAttribution(report.request,report.task,s.requests,result.tasks,s.teamGroups),at):report):s.defects;
+    return {...s,tasks:result.tasks,defects};
+   },timestamp);
+   setDialog(null);setNotice('Selected tasks updated');
+  }}/>}
  {dialog.kind==='delete-tasks'&&<>
   <p>{tasksToDelete.map(item=>typeLabel(item.type)+' · '+item.id).join(', ')}</p>
   <p>Unselected subtasks become top-level tasks and dependencies on deleted tasks are removed. The request’s activity log and linked defect reports retain a record of the deleted tasks.</p>
@@ -680,7 +698,7 @@ function App(){
  {dialog.kind==='newtask'&&<form onSubmit={e=>{
   e.preventDefault();
   const d=new FormData(e.currentTarget);
-  const id='FT-'+(Math.max(1056,...[...allTasks,...deletedTasks].map(t=>Number(t.id.split('-')[1])))+1);
+  const id='FT-'+(Math.max(1056,...[...allTasks,...deletedTasks].filter(t=>!t.workflowGroup).map(t=>Number(t.id.split('-')[1])))+1);
   const {parent,file}=dialog;
   if(!canManage||file.archivedAt||parent&&!canAddSubtask(parent))return;
   const selectedType=taskTypes.find(type=>type.id===dialog.type)??taskTypes[0];
@@ -715,6 +733,52 @@ function App(){
 
  </div></div>}
  </div>;
+}
+
+function BulkTaskForm({dialog,people,statuses,taskTypes,zone,toInstant,typeLabel,tasks,save,cancel}){
+ const [error,setError]=useState('');
+ const {field,ids}=dialog;
+ const selected=tasks.filter(task=>ids.includes(task.id));
+ const file=selected[0]?.fileId;
+ const related=selected.every(task=>task.fileId===file)?tasks.filter(task=>task.fileId===file&&!ids.includes(task.id)):[];
+ const options={
+  type:taskTypes.map(item=>[item.id,item.label]),
+  person:[['','Unassigned'],...people.map(name=>[name,name])],
+  status:statuses.filter(item=>!item.automatic&&!['Waiting','Assigned','Pending'].includes(item.id)).map(item=>[item.id,item.label]),
+  parentTask:[['','Top level'],...related.map(task=>[task.id,typeLabel(task.type)+(task.workflowGroup?' group':' · '+task.id)])],
+  dependsOn:[['','No prerequisite'],...related.map(task=>[task.id,typeLabel(task.type)+(task.workflowGroup?' group':' · '+task.id)])],
+ }[field];
+ return <form onSubmit={event=>{
+  event.preventDefault();
+  const form=new FormData(event.currentTarget);
+  let value=form.get('value');
+  if(value==='__clear')value='';
+  if(field==='pages')value=value===''?null:Number(value);
+  if(field==='due'){
+   value=value?toInstant(value,zone):null;
+   if(form.get('value')&&!value){setError('Enter a valid due date and time.');return;}
+  }
+  if(field==='schedule'){
+   const start=form.get('start'),end=form.get('end');
+   const scheduledStart=start?Date.parse(toInstant(start,zone)):null;
+   const scheduledEnd=end?Date.parse(toInstant(end,zone)):null;
+   if((start||end)&&(!Number.isFinite(scheduledStart)||!Number.isFinite(scheduledEnd)||scheduledEnd<=scheduledStart)){
+    setError('Enter a valid start and end with the end after the start, or clear both.');return;
+   }
+   value={scheduledStart,scheduledEnd};
+  }
+  setError(save(value)??'');
+ }}>
+  {options?<label>{bulkWorkflowFields[field]}<select name="value" defaultValue="" required>
+   <option value="" disabled>Choose an option</option>
+   {options.map(([id,label])=><option key={id} value={id||'__clear'}>{label}</option>)}
+  </select></label>:field==='pages'?<label>Pages<input name="value" type="number" min="1" max="100000" placeholder="Leave blank to clear"/></label>:
+   field==='due'?<label>Due date<ZonedInput zone={zone} toInstant={toInstant} name="value"/></label>:
+   <><label>Scheduled start<ZonedInput zone={zone} toInstant={toInstant} name="start"/></label>
+    <label>Scheduled end<ZonedInput zone={zone} toInstant={toInstant} name="end"/></label></>}
+  {error&&<p className="error" role="alert">{error}</p>}
+  <div className="actions"><button type="button" onClick={cancel}>Cancel</button><button type="submit" className="primary">Apply to {ids.length} tasks</button></div>
+ </form>;
 }
 
 function ScheduleFields({task, zone, save}){

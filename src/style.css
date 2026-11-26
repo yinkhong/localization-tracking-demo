@@ -376,9 +376,13 @@ button.team-event:hover,button.team-event:focus-visible { outline:2px solid #172
 .file-workflow>summary .file-rename { border-color:transparent; background:transparent; font-size:.95rem; }
 .file-workflow>summary .file-rename:hover { background:#ecebff; }
 .file-workflow>summary .file-delete { margin-inline-start:auto; }
-.workflow-bulk { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:7px 12px; border-block-start:1px solid var(--line); }
-.workflow-bulk span { margin-inline-end:auto; color:var(--muted); font-size:.83rem; }
-.workflow-bulk button { padding:4px 8px; font-size:.78rem; }
+ .workflow-bulk { position:fixed; z-index:42; inset-inline-start:50%; inset-block-end:18px;
+ transform:translateX(-50%); max-width:calc(100vw - 24px); width:max-content; overflow:auto;
+ display:flex; align-items:center; gap:3px; white-space:nowrap; padding:5px; border:1px solid var(--line);
+ border-radius:10px; background:white; box-shadow:0 6px 22px #22325730; }
+.workflow-bulk span { color:var(--accent); font-weight:650; padding:0 6px; font-size:.83rem; }
+.workflow-bulk button { padding:5px 7px; font-size:.78rem; }
+.workflow-group-row td:not(.workflow-selection) { background:#f0effb; border-block-start:1px solid #d7d1ee; }
 .workflow-table .workflow-selection { position:relative; width:33px; min-width:33px; padding:0; border:0; background:white; }
 .workflow-selection label { position:absolute; inset:0; display:grid; place-items:center; cursor:pointer; }
 .workflow-table .workflow-selection input { width:15px; height:15px; margin:0; accent-color:var(--accent); opacity:0; }
@@ -400,3 +404,5 @@ button.team-event:hover,button.team-event:focus-visible { outline:2px solid #172
 .catalog-delete-confirm p { flex:1; margin:0; }
 .status-menu-editor .catalog-delete-confirm button { width:auto; border:1px solid var(--line); }
 .status-menu-editor .file-danger { color:#9d302e; }
+
+body:has(.overlay) .workflow-bulk { z-index:2; }

@@ -241,8 +241,11 @@ export function FileKanban({files,tasks,statuses,openFile}){
  </div>;
 }
 
+export const bulkWorkflowFields={type:'Type',person:'Assignee',status:'Status',pages:'Pages',due:'Due date',
+ schedule:'Schedule',dependsOn:'Prerequisite',parentTask:'Parent'};
+
 export function FileWorkflows({files,tasks,account,people,canManage,editable,locked,changeTask,openTask,
- addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask,deleteTasks,removeDependency}) {
+ addTask,editFile,deleteFile,addSubtask,canAddSubtask,taskAction,statusBadge,statuses,date,zone,localValue,toInstant,showError,taskTypes,typeLabel,taskStatusEditor,taskTypeEditor,orders,moveTask,deleteTasks,removeDependency,editSelected}) {
  const [drag,setDrag]=useState(null);
  const [target,setTarget]=useState(null);
  const [selection,setSelection]=useState(()=>new Set());
@@ -265,13 +268,21 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
   setDrag(null);setTarget(null);
  }
  if(!files.length)return <p className="empty">Add a file to create its workflow.</p>;
- return <div className="file-workflows">{files.map(file=>{
+ const selectedIds=tasks.filter(task=>!task.workflowGroup&&selection.has(task.id)).map(task=>task.id);
+ return <div className="file-workflows">
+  {canManage&&selectedIds.length>0&&<div className="workflow-bulk" role="toolbar" aria-label="Selected workflow tasks">
+   <span aria-live="polite">{selectedIds.length} selected</span>
+   {Object.entries(bulkWorkflowFields).map(([field,label])=><button type="button" key={field} onClick={()=>editSelected(selectedIds,field)}>{label}</button>)}
+   <button type="button" className="file-danger" onClick={()=>deleteTasks(selectedIds)}>Delete</button>
+   <button type="button" aria-label="Clear task selection" onClick={()=>select(selectedIds,false)}>×</button>
+  </div>}
+  {files.map(file=>{
   const items=tasks.filter(task=>task.fileId===file.id);
   const parents=parentTaskIds(items);
   const leaves=items.filter(task=>!parents.has(task.id));
   const rows=workflowOrder(items,orders[file.id]);
   const {segments,lanes}=prerequisiteGroups(rows);
-  const ids=rows.map(task=>task.id);
+  const ids=rows.filter(task=>!task.workflowGroup).map(task=>task.id);
   const selected=ids.filter(id=>selection.has(id));
   const allSelected=ids.length>0&&selected.length===ids.length;
   const byId=new Map(tasks.map(task=>[task.id,task]));
@@ -288,11 +299,6 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
     {canManage&&<button type="button" className="file-delete file-danger" aria-label={'Delete file '+file.name}
      onClick={event=>{event.preventDefault();event.stopPropagation();deleteFile(file);}}>Delete</button>}
    </summary>
-   {canManage&&selected.length>0&&<div className="workflow-bulk">
-    <span aria-live="polite">{selected.length} selected</span>
-    <button type="button" className="file-danger" onClick={()=>deleteTasks(selected)}>Delete selected</button>
-    <button type="button" onClick={()=>select(selected,false)}>Clear selection</button>
-   </div>}
    {items.length?<div className="table-wrap"><table className="workflow-table" style={{'--prerequisite-gutter':lanes*9+'px'}}>
     <thead><tr>{canManage&&<th className="workflow-selection" aria-label="Selection"><label>
      <input type="checkbox" aria-label={'Select all tasks for '+file.name} checked={allSelected} data-visible={selected.length>0}
@@ -304,8 +310,6 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      const blocked=blockers.length>0;
      const parent=parents.has(task.id);
      const predecessors=dependencyIds(task,tasks);
-     const parallel=!parent&&leaves.some(peer=>peer.id!==task.id&&peer.parentTask===task.parentTask&&
-      JSON.stringify(dependencyIds(peer,tasks).sort())===JSON.stringify([...predecessors].sort()));
      let depth=0;
      const seen=new Set([task.id]);
      for(let ancestor=byId.get(task.parentTask);ancestor&&!seen.has(ancestor.id);ancestor=byId.get(ancestor.parentTask)){
@@ -318,13 +322,13 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
      const siblings=rows.filter(row=>(row.parentTask||null)===(task.parentTask||null));
      const index=siblings.indexOf(task);
      const checked=selection.has(task.id);
-     return <tr key={task.id} data-selected={canManage&&checked} className={(task.parentTask?'workflow-subtask ':'')+(targetMode?'drag-'+targetMode:'')}
+     return <tr key={task.id} data-selected={canManage&&checked} className={(task.workflowGroup?'workflow-group-row ':'')+(task.parentTask?'workflow-subtask ':'')+(targetMode?'drag-'+targetMode:'')}
       onDragOver={event=>{if(drag?.file===file.id&&drag.id!==task.id){event.preventDefault();const mode=placement(event);if(target?.id!==task.id||target.mode!==mode)setTarget({id:task.id,mode});}}}
       onDrop={event=>drop(file,event,task.id)}>
-      {canManage&&<td className="workflow-selection"><label>
+      {canManage&&<td className="workflow-selection">{!task.workflowGroup&&<label>
        <input type="checkbox" aria-label={'Select task '+task.id} checked={checked} data-visible={checked}
         onChange={event=>select([task.id],event.target.checked)}/>
-      </label></td>}
+      </label>}</td>}
       <td className="workflow-operation-cell" style={{'--workflow-indent':Math.min(depth,5)*18+'px'}}>
        {segments[rowIndex].map(({id,lane,first,last,branch})=><span key={id} aria-hidden="true"
         className="workflow-prerequisite-line" data-first={first} data-last={last} data-branch={branch}
@@ -340,34 +344,32 @@ export function FileWorkflows({files,tasks,account,people,canManage,editable,loc
          const other=siblings[index+direction];
          if(other){event.preventDefault();moveTask(file.id,task.id,other.id,direction>0?'after':'before');}
         }}>⠿</button>}
-       <button className="link record" onClick={()=>openTask(task.id)}>{typeLabel(task.type)} <span aria-hidden="true">↗</span></button>
-       <small>{parent?'Parent task · ':''}{task.id}</small>
+       <button className="link record" onClick={()=>openTask(task.id)}>{typeLabel(task.type)}{task.workflowGroup?' group':''} <span aria-hidden="true">↗</span></button>
+       {!task.workflowGroup&&<small>{parent?'Parent task · ':''}{task.id}</small>}
        {parentTask&&<small className="workflow-relation child-relation">
         <button type="button" className="link" onClick={()=>openTask(parentTask.id)}>
-         <span aria-hidden="true">↳ </span>{typeLabel(parentTask.type)} - {parentTask.id}
+         <span aria-hidden="true">↳ </span>{typeLabel(parentTask.type)}{parentTask.workflowGroup?' group':' - '+parentTask.id}
         </button></small>}
        {targetMode&&<span className={'workflow-drop-hint workflow-drop-'+targetMode}>
-        {targetMode==='sequence'?'Start after '+task.id:targetMode==='inside'?'Make a subtask of '+task.id:'Reorder below '+task.id}
+        {targetMode==='sequence'?'Start after '+task.id:targetMode==='inside'?(draggedTask?.type===task.type&&!parent?'Group with ':'Make a subtask of ')+(task.workflowGroup?typeLabel(task.type)+' group':task.id):'Reorder below '+task.id}
         {targetMode==='sequence'&&draggedTask?.dependsOn&&draggedTask.dependsOn!==task.id&&
          ' · replaces '+draggedTask.dependsOn}
        </span>}
        {predecessors.length>0&&<small className={'workflow-relation dependency-relation '+(blocked?'workflow-blocked':'')}>
-        <span>{blocked?'Waiting for':'After'}</span>{predecessors.map(id=><span className="workflow-dependency" key={id}>
+        <span>{blocked?'Waiting':'After'}</span>{predecessors.map(id=><span className="workflow-dependency" key={id}>
          {linkedTask(id)}{canManage&&task.dependsOn===id&&<button type="button" className="dependency-remove"
           aria-label={'Remove prerequisite '+id+' from '+task.id} title="Remove prerequisite"
           onClick={()=>removeDependency(task.id,id)}>×</button>}
         </span>)}</small>}
-       {parallel&&<small className="workflow-relation parallel-relation">Parallel · same prerequisites</small>}
-       {!predecessors.length&&!parallel&&<small className="workflow-relation parallel-relation">No prerequisite</small>}
       </div></td>
       <td>{canManage&&!task.parentTask?<TaskTypePicker label={'Task type · '+task.id} value={task.type} {...{taskTypes}} disabled={locked(task.id)} editor={taskTypeEditor} onChange={type=>save({type})}/>:typeLabel(task.type)}</td>
       <td>{parent?<span className="parent-note">Subtasks only</span>:canManage?<TaskSelect label={'Operator · '+task.id} value={task.person||''} options={[[ '', 'Unassigned' ],...people]}
        disabled={locked(task.id)} save={person=>save({person})}/>:task.person||'Unassigned'}</td>
-      <td>{editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>
-      <td>{canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
+      <td>{task.workflowGroup?'—':editable(task)?<InlinePages task={task} save={save}/>:task.pages??'—'}</td>
+      <td>{task.workflowGroup?'—':canManage?<InlineDue {...{task,zone,localValue,toInstant,save,showError}}/>:date(task.due)}</td>
       <td>{parent?'—':formatMinutes(effort.minutes)}{!parent&&effort.source==='Historical'&&<small>Historical</small>}</td>
       <td>{!parent&&editable(task)?<TaskStatus task={task} statuses={statuses} locked={locked(task.id)} blocked={blocked} save={save} editor={taskStatusEditor}/>:statusBadge(task.status)}</td>
-      <td><div className="workflow-actions">{taskAction(task)}{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}{canManage&&<button type="button" className="file-danger" aria-label={'Delete task '+task.id} onClick={()=>deleteTasks([task.id])}>Delete</button>}</div></td>
+      <td><div className="workflow-actions">{taskAction(task)}{canManage&&<button disabled={!canAddSubtask(task)} onClick={()=>addSubtask(file,task)}>Add subtask</button>}{canManage&&!task.workflowGroup&&<button type="button" className="file-danger" aria-label={'Delete task '+task.id} onClick={()=>deleteTasks([task.id])}>Delete</button>}</div></td>
      </tr>;
     })}</tbody>
    </table></div>:<p className="empty">No operations in this workflow yet.</p>}

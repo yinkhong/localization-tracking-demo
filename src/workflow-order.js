@@ -1,5 +1,6 @@
-import {workflowOrder} from './status.jsx';
+import {workflowOrder,parentTaskIds,dependencyIds,blockedTask,resolveTasks,statusGroup} from './status.jsx';
 import {updateRelationships} from './task-relations.jsx';
+import {patchRecord} from './timeline';
 
 export function reorderWorkflowRows(tasks,order,source,target,after=false){
  const rows=workflowOrder(tasks,order);
@@ -21,7 +22,20 @@ export function moveWorkflowTask(tasks,file,order,source,target,placement,status
  const item=tasks.find(task=>task.id===source&&task.fileId===file);
  const anchor=tasks.find(task=>task.id===target&&task.fileId===file);
  if(!item||placement!=='root'&&(!anchor||item===anchor))return {};
- const parent=placement==='root'?'':placement==='inside'?anchor.id:anchor.parentTask||'';
+ const existingGroup=tasks.find(task=>task.workflowGroup&&task.id===anchor?.parentTask);
+ const anchorIsParent=tasks.some(task=>task.parentTask===target);
+ if(placement==='inside'&&item.type===anchor.type&&!anchorIsParent&&!existingGroup){
+  const id='group-'+source+'-'+target+'-'+timestamp;
+  const group={id,workflowGroup:true,fileId:file,file:item.file,request:item.request,type:item.type,
+   parentTask:anchor.parentTask??null,status:'Ready',person:'',createdAt:timestamp,modifiedAt:timestamp};
+  const updated=updateRelationships([...tasks,group],id,{fileId:file,file:item.file,parentTask:group.parentTask||'',
+   dependsOn:'',children:[target,source]},statuses,timers,timestamp);
+  if(updated.error)return updated;
+  const rows=workflowOrder(tasks.filter(task=>task.fileId===file),order);
+  const priority=rows.flatMap(task=>task.id===anchor.id?[id,target,source]:task.id===source?[]:[task.id]);
+  return {tasks:updated.tasks,order:workflowOrder(updated.tasks.filter(task=>task.fileId===file),priority).map(task=>task.id)};
+ }
+ const parent=placement==='root'?'':placement==='inside'?(existingGroup&&item.type===anchor.type?existingGroup.id:anchor.id):anchor.parentTask||'';
  const predecessor=placement==='sequence'?anchor.id:item.dependsOn||'';
  let updated=tasks;
  if(parent!==(item.parentTask||'')||predecessor!==(item.dependsOn||'')){
@@ -58,13 +72,29 @@ export function removeWorkflowTasks(state,ids,timestamp,actor){
  return {...state,tasks,workflowOrders,deletedTasks};
 }
 
+export function removeEmptyWorkflowGroups(state){
+ let tasks=state.tasks;
+ let parents=parentTaskIds(tasks);
+ const removed=new Set();
+ while(tasks.some(task=>task.workflowGroup&&!parents.has(task.id))){
+  for(const task of tasks)if(task.workflowGroup&&!parents.has(task.id))removed.add(task.id);
+  tasks=tasks.filter(task=>!removed.has(task.id));
+  parents=parentTaskIds(tasks);
+ }
+ if(!removed.size)return state;
+ return {...state,tasks:tasks.map(task=>removed.has(task.dependsOn)?{...task,dependsOn:null}:task),
+  workflowOrders:Object.fromEntries(Object.entries(state.workflowOrders??{}).map(([file,order])=>[file,order.filter(id=>!removed.has(id))]))};
+}
+
 export function prerequisiteGroups(rows){
+ const parents=parentTaskIds(rows);
  const members=new Map();
  rows.forEach((task,index)=>{
-  if(!task.dependsOn)return;
-  const group=members.get(task.dependsOn)??[];
+  if(parents.has(task.id))return;
+  const key=JSON.stringify([task.parentTask??null,[...dependencyIds(task,rows)].sort()]);
+  const group=members.get(key)??[];
   group.push(index);
-  members.set(task.dependsOn,group);
+  members.set(key,group);
  });
  const segments=rows.map(()=>[]);
  const laneEnds=[];
@@ -80,4 +110,61 @@ export function prerequisiteGroups(rows){
   }
  }
  return {segments,lanes:laneEnds.length};
+}
+
+export function bulkWorkflowUpdate(tasks,ids,field,value,statuses,timers,timestamp){
+ const selected=new Set(ids);
+ const chosen=tasks.filter(task=>selected.has(task.id)&&!task.workflowGroup);
+ if(chosen.length!==selected.size||!chosen.length)return {error:'Select existing tasks to edit.'};
+ const parents=parentTaskIds(tasks);
+ const relationship=field==='parentTask'||field==='dependsOn';
+ if(relationship){
+  if(value&&selected.has(value))return {error:'Choose a task outside the selection.'};
+  let next=tasks;
+  for(const task of chosen){
+   const changes={fileId:task.fileId,file:task.file,parentTask:task.parentTask||'',dependsOn:task.dependsOn||'',
+    children:next.filter(child=>child.parentTask===task.id).map(child=>child.id),[field]:value};
+   const result=updateRelationships(next,task.id,changes,statuses,timers,timestamp);
+   if(result.error)return result;
+   next=result.tasks;
+  }
+  return {tasks:next};
+ }
+ if(['person','status','type'].includes(field)&&timers.some(timer=>selected.has(timer.id))){
+  return {error:'Pause the selected tasks’ timers before applying this change.'};
+ }
+ if(field==='type'){
+  const byId=new Map(tasks.map(task=>[task.id,task]));
+  const affected=new Set(chosen.map(task=>task.id));
+  for(const task of tasks){
+   const ancestors=new Set();
+   for(let parent=byId.get(task.parentTask);parent&&!ancestors.has(parent.id);parent=byId.get(parent.parentTask)){
+    ancestors.add(parent.id);
+    if(selected.has(parent.id)){affected.add(task.id);break;}
+   }
+  }
+  if(chosen.some(task=>task.parentTask&&!affected.has(task.parentTask)&&byId.get(task.parentTask)?.type!==value)){
+   return {error:'A subtask uses its parent’s type. Change the parent’s type first.'};
+  }
+  if(timers.some(timer=>affected.has(timer.id)&&byId.get(timer.id)?.type!==value)){
+   return {error:'Pause timers on the affected subtasks before changing their type.'};
+  }
+  return {tasks:tasks.map(task=>affected.has(task.id)?{...task,type:value,modifiedAt:timestamp}:task)};
+ }
+ const fields=field==='schedule'?value:{[field]:value};
+ if(field==='pages')fields.pagesManual=true;
+ const affected=chosen.filter(task=>!['person','status'].includes(field)||!parents.has(task.id));
+ if(!affected.length)return {error:'This field is calculated for parent tasks. Select their subtasks to edit it.'};
+ if(field==='status'&&statusGroup(statuses,value)!=='To-do'&&affected.some(task=>blockedTask(task,tasks,statuses))){
+  return {error:'Complete the prerequisites for the selected tasks before changing their status.'};
+ }
+ const idsToUpdate=new Set(affected.map(task=>task.id));
+ const next=tasks.map(task=>idsToUpdate.has(task.id)?patchRecord(task,fields,timestamp,'person'):task);
+ if(field==='status'){
+  const resolved=resolveTasks(next,statuses,timestamp);
+  const before=new Map(tasks.map(task=>[task.id,task]));
+  if(resolved.some(task=>statusGroup(statuses,task.status)!=='To-do'&&blockedTask(task,resolved,statuses)&&
+   !blockedTask(before.get(task.id),tasks,statuses)))return {error:'A downstream task has already started. Keep its prerequisite complete.'};
+ }
+ return {tasks:next};
 }
