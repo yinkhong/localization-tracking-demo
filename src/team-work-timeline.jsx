@@ -26,7 +26,7 @@ export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeO
   else next.add(name);
   return next;
  });
- const [zoom,setZoom]=useState(0);
+ const [zoom,setZoom]=useState(steps.indexOf(15));
  const [viewport,setViewport]=useState([0,1000]);
  const anchor=useRef(null);
  const zoomWheel=useRef(null);
@@ -139,8 +139,8 @@ export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeO
      const absences=unavailableWindows(timeOff[row.name]??[],toInstant,leftDay.start,rightDay.start);
      const isExpanded=expanded.has(row.name);
      const detailId='member-timeline-'+encodeURIComponent(row.name);
-     const {groups,scheduledLanes}=compactEvents(row.rows,position,chartWidth);
-     return <React.Fragment key={row.name}><div className="team-timeline-row" style={{'--extra-scheduled-height':Math.max(0,scheduledLanes-1)*19+'px'}}>
+     const groups=compactEvents(row.rows,position,chartWidth);
+     return <React.Fragment key={row.name}><div className="team-timeline-row">
       <div className="team-timeline-name"><button className="link" aria-expanded={isExpanded}
        aria-controls={isExpanded?detailId:undefined} onClick={()=>toggleMember(row.name)}>
        <span aria-hidden="true" className="member-toggle">{isExpanded?'▾':'▸'}</span>{row.name}</button></div>
@@ -153,12 +153,12 @@ export function TeamWorkTimeline({day,people,team,teamGroups,events,shifts,timeO
        {groups.map(group=>{
         const caption=group.events.map(event=>labelFor(event,zone,typeLabel)).join('\n');
         const task=group.events[0].task;
-        return <button key={group.kind+':'+group.left+':'+(group.lane??0)} className={'team-event productivity-'+group.kind}
-         style={{left:group.left,width:group.end-group.left,'--scheduled-lane':(group.lane??0)*19+'px'}} title={caption} aria-label={caption}
+        return <button key={group.kind+':'+group.left} className={'team-event productivity-'+group.kind}
+         style={{left:group.left,width:group.end-group.left}} title={caption} aria-label={caption}
          onClick={()=>{
           if(group.events.length===1&&task&&!archivedFiles.has(task.fileId))navigate('Task',task.id);
           else setExpanded(current=>new Set([...current,row.name]));
-         }}/>;
+         }}>{group.kind==='scheduled'&&group.events.length>1&&<span aria-hidden="true">{group.events.length}</span>}</button>;
        })}
       </div>
      </div>
@@ -181,22 +181,12 @@ function visibleTicks(dayStart,dayWidth,[left,width]){
 
 function compactEvents(events,position,chartWidth){
  const groups=[];
- const laneEnds=[];
  for(const kind of ['plannedBreak','scheduled','actual','actualBreak','completed']){
   const bars=events.filter(event=>event.kind===kind).map(event=>{
-   const minimum=kind==='plannedBreak'||kind==='actualBreak'?12:22;
+   const minimum=kind==='scheduled'?4:kind==='plannedBreak'||kind==='actualBreak'?12:22;
    const left=Math.min(position(event.start),chartWidth-minimum);
    return {kind,left,end:Math.max(left+minimum,position(event.end)),events:[event]};
   }).sort((a,b)=>a.left-b.left);
-  if(kind==='scheduled'){
-   for(const bar of bars){
-    const freeLane=laneEnds.findIndex(end=>end<=bar.left);
-    const lane=freeLane<0?laneEnds.length:freeLane;
-    laneEnds[lane]=bar.end;
-    groups.push({...bar,lane});
-   }
-   continue;
-  }
   let previous;
   for(const bar of bars){
    if(previous&&bar.left<previous.end){
@@ -208,7 +198,7 @@ function compactEvents(events,position,chartWidth){
    }
   }
  }
- return {groups,scheduledLanes:laneEnds.length};
+ return groups;
 }
 
 function TimelineDetails({rows,shifts,absences,from,through,zone,typeLabel,navigate,archivedFiles}){
