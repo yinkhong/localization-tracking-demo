@@ -20,9 +20,11 @@ import {correctTaskTime,defaultCorrectionAccess,planBreak,todayBreaks} from './t
 import {updateTaskDueDates} from './task-due';
 import {planWork} from './auto-schedule';
 import {useFloatingTimer} from './floating-timer';
+import {NewsFeed} from './news-feed';
+import {acknowledgeNews,newsAccounts,publishNews,sampleNews} from './news-data';
 import './style.css';
 
-const sections=[['Overview','◫'],['Requests','▤'],['Planning','▦'],['My work','✓'],['Defects','◇'],['Reporting','▥'],['Productivity','▧'],['Teams','♧']];
+const sections=[['Overview','◫'],['Requests','▤'],['News feed','≡'],['Planning','▦'],['My work','✓'],['Defects','◇'],['Reporting','▥'],['Productivity','▧'],['Teams','♧']];
 const palette={'In progress':'blue','Under review':'blue','Ready':'green','On track':'green','Complete':'green','Trained':'green','Fits':'green','At risk':'red','Major':'red','Waiting':'amber','Paused':'amber','Does not fit':'amber','Open':'amber','Unscheduled':'gray','Closed':'green','Historical':'blue','Page-based':'green'};
 const badge = name => <span className={'badge '+(palette[name]||'gray')}><i/>{name}</span>;
 const clock = n => [Math.floor(n/3600),Math.floor(n/60)%60,n%60].map(x=>String(x).padStart(2,'0')).join(':');
@@ -106,7 +108,7 @@ function App(){
   }
   const inUse=catalog==='requestStatuses'?s.requests.some(item=>item.status===id):
    catalog==='statuses'?savedTasks.some(item=>item.status===id):
-   catalog==='accounts'?s.requests.some(item=>item.account===id)||s.defects.some(item=>item.account===id):
+   catalog==='accounts'?s.requests.some(item=>item.account===id)||s.defects.some(item=>item.account===id)||(s.newsUpdates??sampleNews).some(item=>item.account===id):
    savedTasks.some(item=>item.type===id)||s.requests.some(item=>item.types?.includes(id));
   if(inUse)return 'This label is still used by existing records. Choose another label on those records before deleting it.';
   const items=s[catalog]??(catalog==='accounts'?defaultAccounts:defaultTaskTypes);
@@ -477,8 +479,25 @@ function App(){
  return <div className="table-wrap"><table><thead><tr><th>Finding</th><th>Related request</th><th>Severity</th><th>Status</th></tr></thead><tbody>{items.map(d=><tr key={d.id}><td><button className="link record" onClick={()=>navigate('Defect',d.id)}>{d.title}</button><small>{d.id}</small></td><td><button className="link" onClick={()=>navigate('Request',d.request)}>{d.request}</button></td><td>{badge(d.severity)}</td><td>{badge(d.status)}</td></tr>)}</tbody></table>{!items.length&&<div className="empty">No findings to show.</div>}</div>;
  }
  const primaryNav=sections.filter(([name])=>name==='Productivity'?role==='Manager':
-  canManage||['Requests','My work','Defects'].includes(name)||canSeeResources&&name==='Planning');
- const heading={Productivity:['Team productivity','Review completed tasks, scheduled work, and shift utilization.'],Profile:[profile+'’s profile','Review recorded work sessions in your selected time zone.'],Teams:['Team organization','View team leads, subteams, and operator assignments.'],Reporting:['Reporting','Review request and task records saved in this workspace.'],Admin:['Admin console','Manage demo role permissions.'],Overview:['Delivery overview','Monitor commitments, available work, and quality in one place.'],Requests:['Requests','Manage project intake, effort estimates, and delivery commitments.'],Planning:['Team dispatch','Review ready work and choose an available operator.'],'My work':['My work','Review your assignments and record active work.'],Defects:['Escalations & defects','Review findings and trace them to the affected work.'],Request:[req?.title,req?.id+' · '+accountLabel(req?.account)],Task:[task?.file,task?.id+' · '+typeLabel(task?.type)],Defect:[defect?.title,defect?.id+' · Defect report']}[view];
+  canManage||['Requests','My work','Defects','News feed'].includes(name)||canSeeResources&&name==='Planning');
+ const heading={'News feed':['News feed','Find and revisit updates for your accounts.'],Productivity:['Team productivity','Review completed tasks, scheduled work, and shift utilization.'],Profile:[profile+'’s profile','Review recorded work sessions in your selected time zone.'],Teams:['Team organization','View team leads, subteams, and operator assignments.'],Reporting:['Reporting','Review request and task records saved in this workspace.'],Admin:['Admin console','Manage demo role permissions.'],Overview:['Delivery overview','Monitor commitments, available work, and quality in one place.'],Requests:['Requests','Manage project intake, effort estimates, and delivery commitments.'],Planning:['Team dispatch','Review ready work and choose an available operator.'],'My work':['My work','Review your assignments and record active work.'],Defects:['Escalations & defects','Review findings and trace them to the affected work.'],Request:[req?.title,req?.id+' · '+accountLabel(req?.account)],Task:[task?.file,task?.id+' · '+typeLabel(task?.type)],Defect:[defect?.title,defect?.id+' · Defect report']}[view];
+ const visibleNewsAccounts=newsAccounts(state,accounts);
+ const newsProps={
+  updates:(state.newsUpdates??sampleNews).filter(update=>visibleNewsAccounts.has(update.account))
+   .sort((a,b)=>b.publishedAt-a.publishedAt),
+  accounts:accounts.filter(account=>visibleNewsAccounts.has(account.id)),
+  receipts:state.newsReceipts??[],user:profile,date:historyDate,canPublish:role==='Manager',
+  acknowledge:id=>{
+   const timestamp=Date.now();
+   setState(current=>acknowledgeNews(current,current.accounts??defaultAccounts,id,timestamp));
+   setNotice('Update acknowledged');
+  },
+  publish:fields=>{
+   const timestamp=Date.now(),id=crypto.randomUUID();
+   setState(current=>publishNews(current,current.accounts??defaultAccounts,fields,id,timestamp));
+   setNotice('Account update published');
+  },
+ };
  const relatedRequest=req??requestOf(task?.request??defect?.request);
  const trail=[['Workspace',role==='Operator'?'My work':'Overview','']];
  if(relatedRequest){
@@ -532,6 +551,8 @@ function App(){
   <div><strong>{clock(Math.max(0,Math.floor((now-activeBreak.start)/1000)))}</strong>{floating.control}<button onClick={endBreak}>End break</button></div>
  </div>}
  {floating.card}
+ {(view==='Overview'||view==='My work')&&<NewsFeed key={profile+'-landing'} {...newsProps} landing openArchive={()=>navigate('News feed')}/>}
+ {view==='News feed'&&<NewsFeed key={profile+'-archive'} {...newsProps}/>}
  {view==='Overview'&&<>
  <div className="metrics">{stats.map(([label,value,detail,icon])=><div className="metric" key={label}><div className="metric-top"><span>{label}</span><b>{icon}</b></div><strong>{value}</strong><small>{detail}</small></div>)}</div>
  <div className="overview-grid"><section className="panel chart"><div className="panel-header"><div><h2>Quality trend</h2><p>Confirmed defects per 100 inspected pages</p></div><span className="subtle">Last 4 weeks</span></div><div className="bars" aria-label="Example quality trend: 1.2, 0.9, 0.7, 0.6"><div className="chart-grid"/>{[1.2,.9,.7,.6].map((v,i)=><div className="bar-column" key={i}><div style={{height:(v/1.2)*86+'%'}} className="chart-bar"><span>{v.toFixed(1)}</span></div><small>Week {i+1}</small></div>)}</div></section>

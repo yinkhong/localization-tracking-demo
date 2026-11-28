@@ -432,3 +432,18 @@ button.workflow-icon:disabled { cursor:default; opacity:.5; }
 button.team-event { border:1px solid #000; }
 
 .team-event.productivity-scheduled span { display:block; width:max-content; min-width:13px; padding:0 3px; border-radius:3px; background:#17203c; color:white; font-size:.64rem; line-height:14px; }
+
+.news-heading { gap:12px; flex-wrap:wrap; }
+.news-filters,.news-form { display:flex; flex-wrap:wrap; gap:12px; padding:0 18px 14px; }
+.news-form { display:grid; }
+.news-form label { display:grid; gap:5px; font-weight:650; }
+.news-form textarea { width:100%; padding:8px 10px; font:inherit; color:inherit; border:1px solid var(--line); border-radius:7px; resize:vertical; }
+.news-form button { justify-self:start; }
+.news-count { padding:0 18px; color:var(--muted); font-size:.85rem; }
+.news-item { border-top:1px solid var(--line); padding:12px 18px; }
+.news-item summary { cursor:pointer; }
+.news-title { font-weight:700; margin-right:10px; overflow-wrap:anywhere; }
+.news-meta { color:var(--muted); font-size:.82rem; margin-right:8px; }
+.news-body { white-space:pre-wrap; overflow-wrap:anywhere; max-width:75ch; line-height:1.55; }
+.news-receipt,.news-log { font-size:.85rem; }
+.news-log { margin-top:12px; }
