@@ -5,10 +5,10 @@ import {zoneCode} from './time-zone';
 import {estimate, formatMinutes} from './data';
 
 export const demoProfiles = {
- Alex:{role:'Manager',zone:'Pacific'},
- Jordan:{role:'Team lead',zone:'Eastern'},
- Morgan:{role:'PM',zone:'London'},
- Taylor:{role:'Operator',zone:'India'},
+ Alex:{role:'Manager',zone:'Pacific',qualifiedAccounts:[]},
+ Jordan:{role:'Team lead',zone:'Eastern',qualifiedAccounts:['Account A','Account C']},
+ Morgan:{role:'PM',zone:'London',qualifiedAccounts:['Account B']},
+ Taylor:{role:'Operator',zone:'India',qualifiedAccounts:['Account A']},
 };
 export const defaultActivityAccess = {'Manager':true,'PM':true,'Team lead':true,'Operator':false};
 
@@ -26,9 +26,12 @@ export function bootstrapWorkflow(state) {
  const legacy=state.active;
  const operator=legacy?.operator ?? tasks.find(task=>task.id===legacy?.id)?.person ?? 'Alex';
  const {active,zone,...saved}=state;
+ const profiles=Object.fromEntries(Object.entries(demoProfiles).map(([name,defaults])=>[name,{
+  ...defaults,...(name==='Alex'&&zone?{zone}:{}),...state.profiles?.[name],
+ }]));
  return {...saved,tasks,workflowFiles:files,activity:state.activity??[],
   profile:Object.hasOwn(demoProfiles,state.profile)?state.profile:'Alex',
-  profiles:state.profiles??{...demoProfiles,Alex:{...demoProfiles.Alex,zone:zone||'Pacific'}},
+  profiles,
   activeTimers:state.activeTimers??(legacy?{[operator]:{...legacy,operator}}:{}),
   activityAccess:state.activityAccess??defaultActivityAccess,
  };

@@ -5,13 +5,18 @@ export const sampleNews=[
  {id:'sample-b',account:'Account B',title:'Accessibility review reminder',
   body:'Check document reading order and heading structure before marking accessibility review complete. Record any issues in the request so the next operator can see them.',
   publishedBy:'Demo coordinator',publishedAt:Date.parse('2026-11-25T17:00:00Z')},
+ {id:'sample-c',account:'Account C',title:'Updated intake checklist',
+  body:'Before starting work, check that the request includes the source file and the required delivery format. Ask the project owner for any missing details.',
+  publishedBy:'Demo coordinator',publishedAt:Date.parse('2026-11-26T17:00:00Z')},
 ];
 
 export function newsAccounts({profile,profiles,requests,tasks,workflowFiles},accounts){
  if(profiles[profile]?.role==='Manager')return new Set(accounts.map(account=>account.id));
  const archivedFiles=new Set(workflowFiles.filter(file=>file.archivedAt).map(file=>file.id));
  const assignedRequests=new Set(tasks.filter(task=>task.person===profile&&!archivedFiles.has(task.fileId)).map(task=>task.request));
- return new Set(requests.filter(request=>request.owner===profile||assignedRequests.has(request.id)).map(request=>request.account));
+ const relatedAccounts=new Set(requests.filter(request=>request.owner===profile||assignedRequests.has(request.id)).map(request=>request.account));
+ const qualifications=new Set(profiles[profile]?.qualifiedAccounts??[]);
+ return new Set(accounts.filter(({id})=>qualifications.has(id)||relatedAccounts.has(id)).map(({id})=>id));
 }
 
 export function acknowledgeNews(state,accounts,id,timestamp){

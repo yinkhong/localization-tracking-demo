@@ -40,7 +40,8 @@ function load(){
 function App(){
  const [state,setState]=useState(load),[view,setView]=useState(()=>state.profiles[state.profile].role==='Operator'?'My work':'Overview'),[record,setRecord]=useState(''),[query,setQuery]=useState(''),[filter,setFilter]=useState('All'),[dialog,setDialog]=useState(null),[notice,setNotice]=useState(''),[workflowError,setWorkflowError]=useState(''),[now,setNow]=useState(Date.now()),[mode,setMode]=useState('Table'),[projectTab,setProjectTab]=useState('Tasks'),[fileFocus,setFileFocus]=useState(null);
  const {requests,tasks:allTasks,defects,timelineAccess,activityAccess,activeTimers,profile,profiles,workflowFiles,activity,statuses,requestStatuses,taskTypes=defaultTaskTypes,workflowOrders={},deletedTasks=[],teamGroups=defaultTeamGroups,accounts=defaultAccounts}=state;
- const {role,zone,autoFloatTaskTimer=true}=profiles[profile];
+ const {role,zone,autoFloatTaskTimer=true,qualifiedAccounts}=profiles[profile];
+ const [qualificationPerson,setQualificationPerson]=useState(profile);
  const archivedFiles=new Set(workflowFiles.filter(file=>file.archivedAt).map(file=>file.id));
  const tasks=allTasks.filter(task=>!archivedFiles.has(task.fileId));
  const shifts=state.shifts??{}, timeOff=state.timeOff??{};
@@ -294,6 +295,16 @@ function App(){
  }
  function changeProfilePreference(update){
   setState(s=>({...s,profiles:{...s.profiles,[profile]:{...s.profiles[profile],...update}}}));
+ }
+ function updateQualification(name,accountId,enabled){
+  setState(s=>{
+   if(s.profiles[s.profile].role!=='Manager'||!s.profiles[name]||
+    !(s.accounts??defaultAccounts).some(account=>account.id===accountId))return s;
+   const person=s.profiles[name],ids=new Set(person.qualifiedAccounts);
+   if(enabled)ids.add(accountId);
+   else ids.delete(accountId);
+   return {...s,profiles:{...s.profiles,[name]:{...person,qualifiedAccounts:[...ids]}}};
+  });
  }
  function saveTaskDueDates(ids,due,approved=false){
   if(!canManage||ids.some(id=>!tasks.some(task=>task.id===id)))return 'You need permission to edit these due dates.';
@@ -594,6 +605,13 @@ function App(){
  </>}
  {view==='Planning'&&!canManage&&canSeeResources&&<ResourceTimeline workPlan={workPlan} active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/>}
  {view==='Profile'&&<>
+  <section className="panel">
+   <div className="panel-header"><h2>Account qualifications</h2></div>
+   <div className="panel-header qualification-labels">
+    {accounts.filter(account=>qualifiedAccounts.includes(account.id)).map(account=><span key={account.id}>{badge(account.label)}</span>)}
+    {!accounts.some(account=>qualifiedAccounts.includes(account.id))&&<span className="muted">No account qualifications.</span>}
+   </div>
+  </section>
   <section className="panel"><div className="panel-header"><h2>Timer preferences</h2></div>
    <label className="timer-preference"><input type="checkbox" checked={autoFloatTaskTimer}
     onChange={event=>changeProfilePreference({autoFloatTaskTimer:event.target.checked})}/>
@@ -604,6 +622,22 @@ function App(){
   <ResourceTimeline key={profile} workPlan={workPlan} person={profile} active={timers} {...{tasks,now,zone,date,navigate,toInstant,statuses,typeLabel}} groups={teamGroups}/>
  </>}
  {view==='Teams'&&canManage&&<>
+ {role==='Manager'&&<section className="panel">
+  <div className="panel-header"><h2>Account qualifications</h2></div>
+  <div className="panel-header filters qualification-labels">
+   <label>Team member <select value={qualificationPerson} onChange={event=>setQualificationPerson(event.target.value)}>
+    {people.map(name=><option key={name}>{name}</option>)}
+   </select></label>
+   <label>Add qualification <select value="" onChange={event=>updateQualification(qualificationPerson,event.target.value,true)}>
+    <option value="">Select an account</option>
+    {accounts.filter(account=>!profiles[qualificationPerson].qualifiedAccounts.includes(account.id))
+     .map(account=><option key={account.id} value={account.id}>{account.label}</option>)}
+   </select></label>
+   {accounts.filter(account=>profiles[qualificationPerson].qualifiedAccounts.includes(account.id)).map(account=>
+    <button key={account.id} type="button" className="secondary" aria-label={'Remove '+account.label+' qualification'}
+     onClick={()=>updateQualification(qualificationPerson,account.id,false)}>{account.label} ×</button>)}
+  </div>
+ </section>}
  {shiftEditors.length>0&&<ShiftSettings people={shiftEditors} profiles={profiles} timeOff={timeOff}
   updateTimeOff={(name,change)=>{
    if(!shiftEditors.includes(name))return;
@@ -807,7 +841,7 @@ function App(){
  <label>Page count<input name="pages" type="number" min="1" max="100000" placeholder="Optional"/></label>
  <div className="actions"><button type="submit" className="primary">{dialog.parent?'Add subtask':'Add task'}</button></div></form>}
  {dialog.kind==='timer'&&<><p>Pause or complete <strong>{activeTask?.file}</strong> before starting {dialog.target.file}.</p><div className="actions"><button onClick={()=>setDialog(null)}>Cancel</button><button className="primary" onClick={()=>stop()}>Pause current timer</button></div></>}
- {dialog.kind==='rank'&&(()=>{const t=dialog.task,account=requestOf(t.request)?.account,e=estimate(account,t.type,t.pages);return <><p>{t.file} · {accountLabel(account)} · {formatMinutes(e.minutes)} · Due {date(t.due)}</p><div className="table-wrap"><table><thead><tr><th>Operator</th><th>Account training</th><th>Free before due</th><th>Earliest start</th><th>Due fit</th><th></th></tr></thead><tbody>{operatorRanking(account,t.due,e.minutes).map(p=><tr key={p.name}><td>{p.name}</td><td>{badge(p.trained?'Trained':'Untrained')}</td><td>{formatMinutes(p.free)}</td><td>{p.free>0?short(p.start):'—'}</td><td>{badge(p.fits==null?'Unknown':p.fits?'Fits':'Does not fit')}</td><td><button onClick={()=>{changeTask(t.id,{person:p.name});setDialog(null);setNotice('Assigned to '+p.name);}}>Assign</button></td></tr>)}</tbody></table></div><p className="note">Sample calendars rank by account training, then free time before due, then earliest start.</p></>;})()}
+ {dialog.kind==='rank'&&(()=>{const t=dialog.task,account=requestOf(t.request)?.account,e=estimate(account,t.type,t.pages);return <><p>{t.file} · {accountLabel(account)} · {formatMinutes(e.minutes)} · Due {date(t.due)}</p><div className="table-wrap"><table><thead><tr><th>Operator</th><th>Account training</th><th>Free before due</th><th>Earliest start</th><th>Due fit</th><th></th></tr></thead><tbody>{operatorRanking(account,t.due,e.minutes,profiles).map(p=><tr key={p.name}><td>{p.name}</td><td>{badge(p.trained?'Trained':'Untrained')}</td><td>{formatMinutes(p.free)}</td><td>{p.free>0?short(p.start):'—'}</td><td>{badge(p.fits==null?'Unknown':p.fits?'Fits':'Does not fit')}</td><td><button onClick={()=>{changeTask(t.id,{person:p.name});setDialog(null);setNotice('Assigned to '+p.name);}}>Assign</button></td></tr>)}</tbody></table></div><p className="note">Sample calendars rank by account training, then free time before due, then earliest start.</p></>;})()}
 
  </div></div>}
  </div>;

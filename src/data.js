@@ -29,15 +29,15 @@ export function estimate(account,type,pages){
  if(!rate) return {minutes:null,source:'Unavailable'};
  return pages == null ? {minutes:rate[0],samples:rate[1],source:'Historical'} : {minutes:pages*rate[2],source:'Page-based'};
 }
-export function operatorRanking(account,due,minutes){
+export function operatorRanking(account,due,minutes,profiles){
  const dueMs=Date.parse(due);
  const schedules=[
-  {name:'Jordan',accounts:['Account A','Account C'],start:'2026-11-24T21:00:00Z',end:'2026-11-24T22:30:00Z'},
-  {name:'Taylor',accounts:['Account A'],start:'2026-11-24T21:20:00Z',end:'2026-11-24T22:50:00Z'},
-  {name:'Morgan',accounts:['Account B'],start:'2026-11-24T18:45:00Z',end:'2026-11-24T21:45:00Z'},
+  {name:'Jordan',start:'2026-11-24T21:00:00Z',end:'2026-11-24T22:30:00Z'},
+  {name:'Taylor',start:'2026-11-24T21:20:00Z',end:'2026-11-24T22:50:00Z'},
+  {name:'Morgan',start:'2026-11-24T18:45:00Z',end:'2026-11-24T21:45:00Z'},
  ];
  return schedules.map(p=>{
   const start=Date.parse(p.start), free=Math.max(0,(Math.min(dueMs,Date.parse(p.end))-start)/60000);
-  return {...p,trained:p.accounts.includes(account),free,fits:minutes==null?null:free>=minutes};
+  return {...p,trained:Boolean(profiles[p.name]?.qualifiedAccounts?.includes(account)),free,fits:minutes==null?null:free>=minutes};
  }).sort((a,b)=>Number(b.trained)-Number(a.trained)||b.free-a.free||Date.parse(a.start)-Date.parse(b.start)||a.name.localeCompare(b.name));
 }
